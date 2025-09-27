@@ -268,6 +268,7 @@
                       <button
                         title="Log Out"
                         class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
+                        id="logout"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -536,9 +537,11 @@
       </div>
     </div>
     <script>
+      // Set email
       var emailHolder = document.getElementById("user-email");
       emailHolder.textContent = sessionStorage.getItem("user");
 
+      //Set credibility review
       var credReview = document.getElementById("cred-review");
       var credScore = parseInt(document.getElementById("cred-score").value);
       if (credScore >= 70) {
@@ -546,6 +549,21 @@
       } else if (credScore >= 60) {
         credReview.textContent = "Credible user";
       }
+
+      //Logging out
+      var logout = document.getElementById("logout");
+      logout.addEventListener("click", function () {
+        let sure = confirm("Are you sure you want to log out?");
+        if (sure) {
+          fetch("/profile", {
+            method: "POST",
+          }).then((Request) => {
+            if (Request.statusText == "OK") {
+              window.location.href = "/signin";
+            }
+          });
+        }
+      });
     </script>
   </body>
 </html>

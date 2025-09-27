@@ -16,7 +16,8 @@ app.set("views", "views");
 
 app.use(express.json()); //Convert incoming json to js objects
 app.use(express.urlencoded({ extended: true })); //Handle url encoded data
-app.use(cors());
+app.use(cors()); //For cross origin resource sharing
+app.use(express.static("public"));
 
 //set session config
 app.use(
@@ -36,5 +37,10 @@ app.use(
 
 //Getting the routes
 const login = require("./routes/login.js");
+const userInfo = require("./routes/userInfo.js");
 
 app.use(login);
+app.use(userInfo);
+app.use((req, res) => {
+  res.render("404");
+});

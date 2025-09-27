@@ -6,37 +6,50 @@ const connectionPromise = require("./connection.js");
 const bcrypt = require("bcrypt");
 const saltRounds = parseInt(process.env.S_ROUNDS);
 
+// Rendering page
+router.get("/signin", (req, res) => {
+  res.render("signin");
+});
+
 //User signing up
-router.post("/signup", (req, res) => {
+router.post("/signin", (req, res) => {
   async function main() {
     var email = req.body.email;
     var password = req.body.password;
-    var confirmPassword = req.body["confirm-password"];
-
+    var confirmPassword = req.body.confirmPassword;
+    var username = email.split("@")[0];
+    console.log(req.body);
+    console.log(confirmPassword);
     if (password != confirmPassword) {
       //check if passwords match
-      return res
-        .status(400)
-        .json({ message: "Passwords do not match.\n Please Try again" });
+      return res.status(400).json({
+        message: "Passwords do not match.\n Please Try again",
+        color: "red",
+      });
     }
 
     //hash password
-    var hashedPassword = await bcrypt.hash(password, saltRounds);
+    var hashedPassword = await bcrypt.hash(password.trim(), saltRounds);
 
     //Add data to database
     try {
       const connection = await connectionPromise;
       await connection.query(
-        "insert into users(email, user_password)values(?, ?)",
-        [email, hashedPassword]
+        "insert into users(email, user_password, username)values(?, ?, ?)",
+        [email, hashedPassword, username]
       );
 
-      res.status(200).json({ message: "User registration successful" });
+      res.status(200).json({
+        message:
+          "Account created successfully. Please signin with your current details.",
+        color: "green",
+      });
     } catch (err) {
       if (err.code == "ER_DUP_ENTRY") {
-        return res
-          .status(400)
-          .json({ message: "Account Exists, please proceed to login" });
+        return res.status(400).json({
+          message: "Account Exists, please proceed to login",
+          color: "blue",
+        });
       } else {
         console.error(
           "Error while accessing database for user registration: " +
@@ -70,6 +83,7 @@ router.post("/login", (req, res) => {
         return res.json({
           message:
             "Sorry, account does not exist. Please sign up for an account",
+          color: "red",
         });
       }
 
@@ -86,14 +100,17 @@ router.post("/login", (req, res) => {
         req.session.user = {
           email,
         };
-        console.log(req.session.user);
-        return res
-          .redirect(200, "/users/profile")
-          .json({ message: "Access Granted.\n Correct password" });
+
+        return res.json({
+          message: "Access granted. Redirecting...",
+          color: "green",
+          user: req.session.user.email,
+        });
       } else {
-        return res
-          .status(400)
-          .json({ message: "Access Denied.\n Incorrect password" });
+        return res.status(400).json({
+          message: "Access Denied.\n Incorrect password",
+          color: "red",
+        });
       }
     } catch (err) {
       console.error("Error occured while logging in: " + err.code + "\n" + err);

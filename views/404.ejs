@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>404 Not Found</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: #f9fafb;
+        color: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        text-align: center;
+        overflow: hidden;
+      }
+
+      .container {
+        padding: 20px;
+      }
+
+      .icon {
+        font-size: 5rem;
+        color: #facc15;
+        animation: bounce 1.5s infinite;
+      }
+
+      @keyframes bounce {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-15px);
+        }
+      }
+
+      h1 {
+        font-size: 4rem;
+        margin: 20px 0 10px;
+      }
+
+      p {
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 30px;
+      }
+
+      a {
+        display: inline-block;
+        padding: 12px 24px;
+        background: #2563eb;
+        color: white;
+        border-radius: 30px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: background 0.3s ease;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      a:hover {
+        background: #1d4ed8;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="icon">⚠️</div>
+      <h1>404</h1>
+      <p>Oops! The page you’re looking for doesn’t exist.</p>
+      <a href="/">Back to Home</a>
+    </div>
+
+    <script>
+      // Optional: small animation effect on load
+      document.querySelector(".container").style.opacity = 0;
+      window.onload = () => {
+        document.querySelector(".container").style.transition =
+          "opacity 1s ease";
+        document.querySelector(".container").style.opacity = 1;
+      };
+    </script>
+  </body>
+</html>
