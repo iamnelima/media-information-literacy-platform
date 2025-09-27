@@ -37,4 +37,13 @@ router.post("/profile", (req, res) => {
   }
 });
 
+//Posting page
+router.get("/post", (req, res) => {
+  if (req.session.user) {
+    res.render("post");
+  } else {
+    res.render("404");
+  }
+});
+
 module.exports = router;

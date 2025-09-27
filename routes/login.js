@@ -18,8 +18,7 @@ router.post("/signin", (req, res) => {
     var password = req.body.password;
     var confirmPassword = req.body.confirmPassword;
     var username = email.split("@")[0];
-    console.log(req.body);
-    console.log(confirmPassword);
+
     if (password != confirmPassword) {
       //check if passwords match
       return res.status(400).json({
