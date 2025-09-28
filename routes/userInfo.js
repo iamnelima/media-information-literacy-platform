@@ -16,8 +16,6 @@ const storage = multer.diskStorage({
     async function assignName(r) {
       let request = await r;
       let content = request.body.content;
-      //console.log(request);
-      console.log(content);
       let contentHash = generateHash(content);
       contentHash = contentHash.substring(44, 63);
       let ext = file.mimetype.split("/")[1];
@@ -53,14 +51,96 @@ const imageEvalPrompt =
   'Always be strict when detecting nudity or inappropriacy. If unsure, lean toward "DECLINED".' +
   'If the image is declined, suggest a general reason (e.g., "Contains nudity", "Hate symbol detected").';
 
+//Prompt for credibility check
+var credibilityPrompt = `
+
+You are an evidence-first fact-checking agent for **MILES (Media & Information Literacy Engagement System)**. Your job: given **information in text** (required) and an **optional image**, evaluate how credible the information is by cross-referencing multiple reputable sources and public fact-check databases. Be transparent, conservative with uncertainty, and produce a machine-readable JSON result.
+
+**PRINCIPLES:**
+
+* Decompose complex content into *atomic claims* and evaluate each separately.
+* Prefer **primary sources** (official documents, research papers, government releases), then high-quality journalism and established fact-check organizations.
+* If you have web access, perform live searches (see *Sources to query*). If you do **not** have web access, explicitly state that limitation, provide best-effort reasoning from your knowledge base, and mark confidence accordingly.
+* If evidence is mixed or missing, say so — **do not** invent facts. When unsure, lean toward DECLINED for claims presented as facts.
+* Limit verbatim quotes from external sources to less than 25 words. Include links and short snippet context.
+
+**INPUT:**
+
+* text: (string) — the claim or description (required).
+* image: — optional. If provided, analyze visually and cross-check with text.
+
+**SOURCES TO QUERY (in order of priority):**
+
+1. Official/primary documents: government sites, press releases, original studies (PubMed, official gov domains).
+2. Reputable fact-check organizations: PolitiFact, Snopes, Africa Check, FullFact, FactCheck.org, Reuters Fact Check, AP Fact Check, Poynter.
+3. High-quality news outlets: Reuters, AP, BBC, The New York Times, Guardian, Al Jazeera.
+4. Academic sources: PubMed, Google Scholar, arXiv (for scientific/health claims).
+5. Domain-specific authoritative sites (WHO, CDC for health; IMF/World Bank for economics).
+6. Social posts: only as leads (useful for provenance), not as final evidence.
+
+> If web access is available, search each of the above and return the most relevant results. If you reference any source, include a URL.
+
+**IMAGE ANALYSIS (if image provided):**
+
+* Run visual analysis: identify faces, nudity, manipulations, text in image (OCR).
+* Run a reverse-image search (or simulated reverse-image lookup) to find prior uses, original upload times, and mismatched captions.
+* For manipulation detection, list visible signs (e.g., inconsistent lighting/shadows, cloned regions, resampling artifacts).
+* Cross-check image metadata (EXIF) if available: capture date, device, geolocation. Include any discrepancies with the claim’s stated timeline/location.
+
+**CLAIM DECOMPOSITION:**
+
+* If the input text contains more than one factual assertion, split into numbered atomic data. Evaluate each atomic piece of data individually and then combine evidence for an overall credibility score.
+
+**EVIDENCE ASSESSMENT RULES:**
+
+* Prefer contemporaneous primary evidence over secondary reporting.
+* Treat fact-check org verdicts as high-weight evidence; extract the ruling and URL.
+* Rate each source for reliability (e.g., reliability: high|medium|low) and use it to weight the final score.
+* If sources disagree, summarize the nature of disagreement and how many high-reliability sources support vs contradict.
+
+**SCORING & VERDICTS:**
+
+* Return credibility_score: integer 0–100. Map to labels/colors (use these exact thresholds):
+
+  * >= 70 → "Highly Credible" (green)
+  * 60–69 → "Somewhat Credible" (yellow)
+  * 50–59 → "Low Credibility" (orange)
+  * < 50 → "Not Credible" (red)
+* Compute credibility_score by combining: claim-level evidence weights, source reliabilities, recency, and image manipulation likelihood (if image relevant). Document the weighting formula briefly.
+
+**OUTPUT FORMAT (JAVASCRIPT OBJECT):**
+
+Produce **valid JSON** that matches this schema exactly.
+
+
+**POST-PROCESSING RULES:**
+
+* Include supporting sources and contradicting sources (prioritize highest reliability).
+* When quoting, keep quotes less than 25 words.
+* If you cannot find any reliable sources, set claim_verdict to Insufficient Evidence and claim_score to a conservative low value (e.g., 20–40) with clear rationale.
+* Always include date_of_check and request missing context if that drastically affects credibility (but still produce a best-effort judgment).
+
+**EXAMPLE:**
+
+{
+    "credibility_score": 85,
+    "verdict_label": "Highly Credible",
+    "verdict_color": "green",
+    "explanation": "Multiple primary sources and a fact-check confirm this; no contradictory evidence found."
+
+}
+
+Here is the content:
+
+`;
+
 //Generate hash for  image name
 function generateHash(data) {
-  console.log(data);
   let hash = crpto.createHash("sha256").update(data).digest("hex");
   return hash;
 }
 
-function fileToGenerativePart(path, mimeType) {
+async function fileToGenerativePart(path, mimeType) {
   return {
     inlineData: {
       data: fs.readFileSync(path, { encoding: "base64" }),
@@ -112,82 +192,128 @@ router.get("/post", (req, res) => {
 });
 
 router.post("/post", upload.single("image"), (req, res) => {
-  async function main(prompt, fileName) {
-    try {
-      const ai = new GoogleGenAI({});
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
+  async function imageEval(prompt, fileName) {
+    const ai = new GoogleGenAI({});
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+    });
+
+    if (response.text) {
+      let source = path.join(__dirname, "../eval", "images", fileName);
+      let destination = path.join(__dirname, "../public", "posts", fileName);
+      await fs.copyFile(source, destination, (err) => {
+        if (err) {
+          console.error("Error while copying file from evaluation:\n" + err);
+        }
+        console.log("Copied file to posts folder");
+      });
+      await fs.unlink(source, (err) => {
+        if (err) {
+          console.error(
+            "Error while deleting copied file from evaluation:\n" + err
+          );
+        }
+        console.log("Sucessfully deleted image from evaluation.");
       });
 
-      if (response.text) {
-        let source = path.join(__dirname, "../eval", "images", fileName);
-        let destination = path.join(__dirname, "../public", "posts", fileName);
-        await fs.copyFile(source, destination);
-        await fs.unlink(source, (err) => {
-          if (err) {
-            console.error(
-              "Error while deleting copied file from evaluation:\n" + err
-            );
-          }
-        });
-        console.log(response);
-      } else {
-        //Delete the file and send error message
-        let imagepath = path.join(__dirname, "../eval", "images", fileName);
-        fs.unlink(imagepath, (err) => {
-          if (err) {
-            console.error("Error while deleting evaluated image: \n" + err);
-            return;
-          }
-        });
-        return res.json({
-          message:
-            "Inappropriate content detected! Please upload data that aligns with our guidelines.\n",
-        });
-      }
-    } catch (e) {
-      console.log("Error with Gemini:\n" + e);
+      let output = [fileName, response.text];
+      console.log("Evaluation success!");
+
+      return output;
+    } else {
+      //Delete the file and send error message
+      console.log("Evaluation failed");
+      let imagepath = path.join(__dirname, "../eval", "images", fileName);
+      fs.unlink(imagepath, (err) => {
+        if (err) {
+          console.error("Error while deleting evaluated image: \n" + err);
+          return;
+        }
+        console.log("Image deleted.");
+      });
+      return res.json({
+        message:
+          "Inappropriate content detected! Please upload data that aligns with our guidelines.\n",
+      });
     }
   }
 
-  if (req.session.user) {
-    //main();
-    fs.readdir(path.join(__dirname, "../eval", "images"), (err, files) => {
-      if (err) {
-        console.err("Error while reading dir for image evaluation:\n" + err);
-        return;
-      } else {
-        console.log(req.body.content);
-        let content = req.body.content;
-        let hash = generateHash(content);
-        let targetFile = "";
-        hash = hash.substring(44, 63);
-        files.forEach((file) => {
-          let name = file.split(".")[0];
-          if (name == hash) {
-            targetFile = file;
-          }
-        });
-
-        const imagePath = path.join(__dirname, "../eval", "images", targetFile);
-        let ext = targetFile.split(".")[1];
-        const imageMimeType = "image/" + ext;
-
-        //Create image part for the model
-        const image = fileToGenerativePart(imagePath, imageMimeType);
-
-        //Create an array for a multimodal prompt
-
-        const multimodalPrompt = [image, { text: imageEvalPrompt }];
-        main(multimodalPrompt, targetFile);
-      }
+  async function checkCredibility(prompt) {
+    const ai = new GoogleGenAI({});
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
     });
 
-    fs;
-  } else {
-    res.render("404");
+    if (response.text) {
+      return response.text;
+    } else {
+      console.log(response.promptFeedback);
+    }
   }
+
+  async function main() {
+    if (req.session.user) {
+      fs.readdir(
+        path.join(__dirname, "../eval", "images"),
+        async (err, files) => {
+          if (err) {
+            console.err(
+              "Error while reading dir for image evaluation:\n" + err
+            );
+            return;
+          } else {
+            let content = await req.body.content;
+            let hash = generateHash(content);
+            let targetFile = "";
+            hash = hash.substring(44, 63);
+            files.forEach((file) => {
+              let name = file.split(".")[0];
+              if (name == hash) {
+                targetFile = file;
+              }
+            });
+
+            var imagePath = path.join(
+              __dirname,
+              "../eval",
+              "images",
+              targetFile
+            );
+            let ext = targetFile.split(".")[1];
+            const imageMimeType = "image/" + ext;
+
+            //Create image part for the model
+            const image = await fileToGenerativePart(imagePath, imageMimeType);
+
+            //Create an array for a multimodal prompt
+            console.log("Evaluating image");
+            var multimodalPrompt = [image, { text: imageEvalPrompt }];
+            var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
+
+            console.log("Out of image evaluation function");
+
+            // Analyze the data and determine credibility
+            var postId = generateHash(content);
+            postId = postId.substring(34, 63);
+            var imageLocation = "posts/" + output[1];
+            var textContent = content;
+            var author = req.session.user.email.split("@")[0];
+
+            multimodalPrompt = [image, { text: credibilityPrompt }];
+            var aiResponse = await checkCredibility(multimodalPrompt);
+            console.log(aiResponse);
+            console.log("\n \n \n" + typeof aiResponse);
+          }
+        }
+      );
+    } else {
+      res.render("404");
+    }
+  }
+
+  main();
 });
 
 module.exports = router;
