@@ -543,7 +543,6 @@
         var charCounter = document.getElementById("character-counter");
         textarea.setAttribute("maxlength", "1000");
         textarea.addEventListener("input", function () {
-          console.log("Hu ha");
           let counter = textarea.value.length;
           if (counter >= 1000) {
             charCounter.innerText = "Max";
@@ -557,9 +556,11 @@
         var userMessage = document.getElementById("user-message");
         var imageLabel = document.getElementById("image-label");
         userMessage.style.color = "red";
+        var imageFile = null;
         imageUpload.addEventListener("change", function (e) {
           let files = e.target.files;
           let file = files[0];
+          imageFile = file;
           let size = file.size;
           if (size > 10000000) {
             userMessage.innerText = "File must be 10MBs max";
@@ -588,7 +589,20 @@
             }, 5000);
             return;
           } else {
-            //fetch api
+            let uploadData = new FormData();
+            uploadData.append("image", imageFile);
+            uploadData.append("content", textarea.value);
+            console.log(imageFile, textarea.value);
+            fetch("/post", {
+              method: "POST",
+              body: uploadData,
+            })
+              .then((Response) => Response.json())
+              .then((data) => {
+                console.log(data.message);
+                userMessage.textContent = data.message;
+                userMessage.style.color = "red";
+              });
           }
         });
       };
