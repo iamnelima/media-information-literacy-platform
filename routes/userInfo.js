@@ -120,7 +120,19 @@ router.post("/post", upload.single("image"), (req, res) => {
         contents: prompt,
       });
 
-      if (response.promptFeedback.blockReason) {
+      if (response.text) {
+        let source = path.join(__dirname, "../eval", "images", fileName);
+        let destination = path.join(__dirname, "../public", "posts", fileName);
+        await fs.copyFile(source, destination);
+        await fs.unlink(source, (err) => {
+          if (err) {
+            console.error(
+              "Error while deleting copied file from evaluation:\n" + err
+            );
+          }
+        });
+        console.log(response);
+      } else {
         //Delete the file and send error message
         let imagepath = path.join(__dirname, "../eval", "images", fileName);
         fs.unlink(imagepath, (err) => {
@@ -133,8 +145,6 @@ router.post("/post", upload.single("image"), (req, res) => {
           message:
             "Inappropriate content detected! Please upload data that aligns with our guidelines.\n",
         });
-      } else {
-        console.log(response.text);
       }
     } catch (e) {
       console.log("Error with Gemini:\n" + e);
