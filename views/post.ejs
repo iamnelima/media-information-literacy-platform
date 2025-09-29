@@ -592,14 +592,13 @@
             let uploadData = new FormData();
             uploadData.append("image", imageFile);
             uploadData.append("content", textarea.value);
-            console.log(imageFile, textarea.value);
+
             fetch("/post", {
               method: "POST",
               body: uploadData,
             })
               .then((Response) => Response.json())
               .then((data) => {
-                console.log(data.message);
                 userMessage.textContent = data.message;
                 userMessage.style.color = "red";
               });

@@ -1,13 +1,14 @@
 const express = require("express");
 const session = require("express-session");
 require("dotenv").config();
-const { GoogleGenAI } = require("@google/genai");
+const { GoogleGenAI, Type } = require("@google/genai");
 const router = express.Router();
 const connectionPromise = require("./connection.js");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crpto = require("crypto");
+const { type } = require("os");
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, "../eval", "images"));
@@ -17,11 +18,12 @@ const storage = multer.diskStorage({
       let request = await r;
       let content = request.body.content;
       let contentHash = generateHash(content);
-      contentHash = contentHash.substring(44, 63);
+      contentHash = contentHash.substring(43, 63);
       let ext = file.mimetype.split("/")[1];
       let name = contentHash;
       return cb(null, name + "." + ext);
     }
+    console.log(req.body.content);
     assignName(req);
   },
 });
@@ -134,6 +136,34 @@ Here is the content:
 
 `;
 
+const responseStructure = {
+  type: Type.OBJECT,
+  properties: {
+    credibilityScore: {
+      type: Type.INTEGER,
+      description: "Overall credibility score from 0 to 100",
+    },
+    verdict_label: {
+      type: Type.STRING,
+      description:
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+    },
+    verdict_color: {
+      type: Type.STRING,
+      description:
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+    },
+    explanation: {
+      type: Type.STRING,
+      description: "Detailed summary and rationale for the final verdict.",
+    },
+    date_of_check: {
+      type: Type.STRING,
+      description: "The date the check was performed (YYYY-MM-DD).",
+    },
+  },
+};
+
 //Generate hash for  image name
 function generateHash(data) {
   let hash = crpto.createHash("sha256").update(data).digest("hex");
@@ -244,10 +274,14 @@ router.post("/post", upload.single("image"), (req, res) => {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseStructure,
+      },
     });
 
     if (response.text) {
-      return response.text;
+      return JSON.parse(response.text);
     } else {
       console.log(response.promptFeedback);
     }
@@ -267,7 +301,7 @@ router.post("/post", upload.single("image"), (req, res) => {
             let content = await req.body.content;
             let hash = generateHash(content);
             let targetFile = "";
-            hash = hash.substring(44, 63);
+            hash = hash.substring(43, 63);
             files.forEach((file) => {
               let name = file.split(".")[0];
               if (name == hash) {
@@ -281,6 +315,7 @@ router.post("/post", upload.single("image"), (req, res) => {
               "images",
               targetFile
             );
+
             let ext = targetFile.split(".")[1];
             const imageMimeType = "image/" + ext;
 
@@ -291,20 +326,62 @@ router.post("/post", upload.single("image"), (req, res) => {
             console.log("Evaluating image");
             var multimodalPrompt = [image, { text: imageEvalPrompt }];
             var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
+            console.log(output);
 
             console.log("Out of image evaluation function");
 
             // Analyze the data and determine credibility
             var postId = generateHash(content);
-            postId = postId.substring(34, 63);
-            var imageLocation = "posts/" + output[1];
+            postId = postId.substring(33, 63);
+            var imageLocation = "posts/" + output[0];
             var textContent = content;
             var author = req.session.user.email.split("@")[0];
 
             multimodalPrompt = [image, { text: credibilityPrompt }];
             var aiResponse = await checkCredibility(multimodalPrompt);
-            console.log(aiResponse);
-            console.log("\n \n \n" + typeof aiResponse);
+            var credScore = aiResponse.credibilityScore;
+            var aiAnalysis = aiResponse.explanation;
+            var dateOfCheck = aiResponse.date_of_check;
+            var verdictLabel = aiResponse.verdict_label;
+            var verdictColor = aiResponse.verdict_color;
+
+            console.log({
+              postId,
+              author,
+              imageLocation,
+              textContent,
+              credScore,
+              dateOfCheck,
+              verdictLabel,
+              verdictColor,
+              aiAnalysis,
+            });
+
+            // Add data to database.
+            const connection = await connectionPromise;
+            try {
+              let dbQuery =
+                "insert into posts(postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis) values(?, ?, ?, ?, ?, ?, ?, ?, ?, );";
+              let dbArray = [
+                postId,
+                author,
+                imageLocation,
+                textContent,
+                credScore,
+                dateOfCheck,
+                verdictLabel,
+                verdictColor,
+                aiAnalysis,
+              ];
+              await connection.query(dbQuery, dbArray);
+            } catch (err) {
+              console.error(
+                "Error while loading data into database: " +
+                  err.code +
+                  "\n" +
+                  err
+              );
+            }
           }
         }
       );
