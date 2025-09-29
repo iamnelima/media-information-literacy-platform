@@ -23,7 +23,6 @@ const storage = multer.diskStorage({
       let name = contentHash;
       return cb(null, name + "." + ext);
     }
-    console.log(req.body.content);
     assignName(req);
   },
 });
@@ -184,7 +183,7 @@ router.get("/profile", (req, res) => {
   if (req.session.user) {
     main();
   } else {
-    res.render("404");
+    res.render("401");
   }
   async function main() {
     let connection = await connectionPromise;
@@ -217,7 +216,7 @@ router.get("/post", (req, res) => {
   if (req.session.user) {
     res.render("post");
   } else {
-    res.render("404");
+    res.render("401");
   }
 });
 
@@ -235,6 +234,7 @@ router.post("/post", upload.single("image"), (req, res) => {
       await fs.copyFile(source, destination, (err) => {
         if (err) {
           console.error("Error while copying file from evaluation:\n" + err);
+          return;
         }
         console.log("Copied file to posts folder");
       });
@@ -243,6 +243,7 @@ router.post("/post", upload.single("image"), (req, res) => {
           console.error(
             "Error while deleting copied file from evaluation:\n" + err
           );
+          return;
         }
         console.log("Sucessfully deleted image from evaluation.");
       });
@@ -265,6 +266,7 @@ router.post("/post", upload.single("image"), (req, res) => {
       return res.json({
         message:
           "Inappropriate content detected! Please upload data that aligns with our guidelines.\n",
+        color: "red",
       });
     }
   }
@@ -326,7 +328,6 @@ router.post("/post", upload.single("image"), (req, res) => {
             console.log("Evaluating image");
             var multimodalPrompt = [image, { text: imageEvalPrompt }];
             var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
-            console.log(output);
 
             console.log("Out of image evaluation function");
 
@@ -345,6 +346,7 @@ router.post("/post", upload.single("image"), (req, res) => {
             var verdictLabel = aiResponse.verdict_label;
             var verdictColor = aiResponse.verdict_color;
 
+            /*
             console.log({
               postId,
               author,
@@ -356,12 +358,14 @@ router.post("/post", upload.single("image"), (req, res) => {
               verdictColor,
               aiAnalysis,
             });
+           */
 
             // Add data to database.
-            const connection = await connectionPromise;
             try {
+              const connection = await connectionPromise;
+
               let dbQuery =
-                "insert into posts(postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis) values(?, ?, ?, ?, ?, ?, ?, ?, ?, );";
+                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis) values(?, ?, ?, ?, ?, ?, ?, ?, ? );";
               let dbArray = [
                 postId,
                 author,
@@ -374,23 +378,49 @@ router.post("/post", upload.single("image"), (req, res) => {
                 aiAnalysis,
               ];
               await connection.query(dbQuery, dbArray);
-            } catch (err) {
-              console.error(
-                "Error while loading data into database: " +
-                  err.code +
+              console.log("Finished loading to database");
+
+              //Send response to user.
+              res.json({
+                message:
+                  "Successfully posted content. Thank you for your contribution.",
+                color: "blue",
+              });
+            } catch (e) {
+              console.log(
+                "Error while loading to database. Error Code: " +
+                  e.code +
                   "\n" +
-                  err
+                  e
               );
             }
           }
         }
       );
     } else {
-      res.render("404");
+      res.render("401");
     }
   }
 
   main();
+});
+
+//Home page
+router.get("/", (req, res) => {
+  async function main() {
+    //Fetch data fom database
+
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis from posts limit 10;"
+    );
+    res.render("index", { posts });
+  }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
 });
 
 module.exports = router;
