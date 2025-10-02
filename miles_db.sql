@@ -24,3 +24,11 @@ CREATE TABLE posts(
     );
 
 CREATE INDEX posts_index ON posts(post_id); 
+CREATE INDEX author_index ON posts(author); 
+
+CREATE TABLE comments(
+comment_id VARCHAR(50) PRIMARY KEY,
+post_id VARCHAR(30) NOT NULL,
+commenter VARCHAR(50) NOT NULL,
+review TEXT NOT NULL
+);

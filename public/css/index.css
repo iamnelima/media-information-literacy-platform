@@ -3691,3 +3691,9 @@ body {
 .aspect-product {
   aspect-ratio: 4/3;
 }
+
+.ai-analysis {
+  height: 125px;
+  transition: 2s ease-in;
+  overflow-y: hidden;
+}

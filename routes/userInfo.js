@@ -1,5 +1,4 @@
 const express = require("express");
-const session = require("express-session");
 require("dotenv").config();
 const { GoogleGenAI, Type } = require("@google/genai");
 const router = express.Router();
@@ -10,18 +9,31 @@ const path = require("path");
 const crpto = require("crypto");
 const { type } = require("os");
 const storage = multer.diskStorage({
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 Megabytes in bytes
+    files: 5, // Max 5 files
+    fieldSize: 10 * 1024 * 1024,
+  },
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, "../eval", "images"));
   },
   filename: (req, file, cb) => {
     async function assignName(r) {
-      let request = await r;
-      let content = request.body.content;
-      let contentHash = generateHash(content);
-      contentHash = contentHash.substring(43, 63);
-      let ext = file.mimetype.split("/")[1];
-      let name = contentHash;
-      return cb(null, name + "." + ext);
+      try {
+        let request = await r;
+        let content = request.body.content;
+        let contentHash = generateHash(content);
+        contentHash = contentHash.substring(43, 63);
+        let ext = file.mimetype.split("/")[1];
+        let name = contentHash;
+        return cb(null, name + "." + ext);
+      } catch (e) {
+        console.error("Error while naming file: " + e.code + "\n" + e);
+        return JSON.stringify({
+          message: "Error occured while uploading image, please try again",
+          color: "orange",
+        });
+      }
     }
     assignName(req);
   },
@@ -311,34 +323,45 @@ router.post("/post", upload.single("image"), (req, res) => {
               }
             });
 
-            var imagePath = path.join(
-              __dirname,
-              "../eval",
-              "images",
-              targetFile
-            );
+            var imagePath = "";
+            var ext = "";
+            var dbImagePath = null;
+            var imagePassedToAi = null;
+            if (targetFile.trim() != "") {
+              //If the image exists
+              imagePath = path.join(__dirname, "../eval", "images", targetFile);
+              ext = targetFile.split(".")[1];
+              const imageMimeType = "image/" + ext;
 
-            let ext = targetFile.split(".")[1];
-            const imageMimeType = "image/" + ext;
-
-            //Create image part for the model
-            const image = await fileToGenerativePart(imagePath, imageMimeType);
-
-            //Create an array for a multimodal prompt
-            console.log("Evaluating image");
-            var multimodalPrompt = [image, { text: imageEvalPrompt }];
-            var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
-
-            console.log("Out of image evaluation function");
+              //Create image part for the model
+              const image = await fileToGenerativePart(
+                imagePath,
+                imageMimeType
+              );
+              imagePassedToAi = image;
+              //Create an array for a multimodal prompt
+              console.log("Evaluating image");
+              var multimodalPrompt = [image, { text: imageEvalPrompt }];
+              var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
+              dbImagePath = "posts/" + output[0];
+              console.log("Out of image evaluation function");
+            }
 
             // Analyze the data and determine credibility
             var postId = generateHash(content);
             postId = postId.substring(33, 63);
-            var imageLocation = "posts/" + output[0];
+            var imageLocation = dbImagePath;
             var textContent = content;
             var author = req.session.user.email.split("@")[0];
 
-            multimodalPrompt = [image, { text: credibilityPrompt }];
+            if (imagePassedToAi) {
+              multimodalPrompt = [
+                imagePassedToAi,
+                { text: credibilityPrompt + content },
+              ];
+            } else {
+              multimodalPrompt = credibilityPrompt + content;
+            }
             var aiResponse = await checkCredibility(multimodalPrompt);
             var credScore = aiResponse.credibilityScore;
             var aiAnalysis = aiResponse.explanation;
@@ -408,13 +431,99 @@ router.post("/post", upload.single("image"), (req, res) => {
 //Home page
 router.get("/", (req, res) => {
   async function main() {
-    //Fetch data fom database
-
+    //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
       "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis from posts limit 10;"
     );
+
+    //Fetch comments/reviews from database
+    var [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments"
+    );
+
+    //Add a comment element for each post
+    posts.forEach((post) => {
+      post.comments = [];
+    });
+
+    postsCounter = 0;
+    comments.forEach((comment) => {
+      posts.forEach((post) => {
+        if (comment.post_id == post.post_id) {
+          post.comments.push(comment);
+        }
+      });
+    });
+
     res.render("index", { posts });
+  }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
+});
+
+//My posts page
+router.get("/myposts", (req, res) => {
+  async function main(user) {
+    //Fetch data fom database
+
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis from posts where author = ? limit 10;",
+      [user]
+    );
+
+    res.render("myposts", { posts });
+  }
+  if (req.session.user) {
+    let email = req.session.user.email;
+    let author = email.split("@")[0];
+    main(author);
+  } else {
+    res.render("401");
+  }
+});
+
+//Deleting posts
+router.delete("/posts", (req, res) => {
+  async function main(id) {
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "delete from posts where post_id = ?",
+      [id]
+    );
+
+    res.json({ message: "Deleted" });
+  }
+
+  if (req.session.user) {
+    let postId = req.body.id;
+    main(postId);
+  } else {
+    res.render("401");
+  }
+});
+
+// Comments endpoint
+router.post("/comments", (req, res) => {
+  async function main() {
+    var commenter = req.body.commenter;
+    var review = req.body.review;
+    var postId = req.body.postId;
+    var commentId = generateHash(review);
+    commentId = commentId.substring(33, 63);
+
+    const connection = await connectionPromise;
+    await connection.query(
+      "insert into comments(comment_id, post_id, commenter, review)values(?, ?, ?, ?)",
+      [commentId, postId, commenter, review]
+    );
+
+    console.log("Finished loading comments");
+    res.json({ message: "sent" });
   }
   if (req.session.user) {
     main();

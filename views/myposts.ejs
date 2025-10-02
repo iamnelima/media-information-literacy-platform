@@ -75,7 +75,7 @@
               >
               <div class="hidden md:flex items-center space-x-1">
                 <a
-                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 bg-primary/10 text-primary font-medium"
+                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 font-medium"
                   href="/"
                   ><svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -150,7 +150,7 @@
                   ><span class="hidden lg:inline">AI Tutor</span></a
                 >
                 <a
-                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted bg-primary/10 text-primary"
                   href="/myposts"
                   ><svg
                     viewBox="0 0 24 24"
@@ -217,7 +217,7 @@
           <div class="md:hidden border-t border-border">
             <div class="flex justify-around py-2">
               <a
-                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-primary"
+                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg"
                 href="/"
                 ><svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -292,7 +292,7 @@
                 ><span class="text-xs">AI Tutor</span></a
               >
               <a
-                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-muted-foreground"
+                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-muted-foreground text-primary"
                 href="/myposts"
                 ><svg
                   viewBox="0 0 24 24"
@@ -351,16 +351,17 @@
         <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div class="space-y-6">
             <div class="text-center space-y-2">
-              <h1 class="text-2xl font-bold">Media Literacy Feed</h1>
+              <h1 class="text-2xl font-bold">My Posts</h1>
               <p class="text-muted-foreground">
-                Analyze content credibility and engage with verified information
+                My Analysis of content credibility and engagement with verified
+                information.
               </p>
             </div>
             <div class="max-w-2xl mx-auto">
               <% posts.forEach((post)=>{ %>
               <div
                 id="<%=post.post_id%>"
-                class="rounded-lg border bg-card text-card-foreground mb-6 shadow-sm hover:shadow-md transition-shadow duration-200 border-border/50"
+                class="post rounded-lg border bg-card text-card-foreground mb-6 shadow-sm hover:shadow-md transition-shadow duration-200 border-border/50"
               >
                 <div class="flex flex-col space-y-1.5 p-6 pb-3">
                   <div class="flex items-start justify-between">
@@ -449,146 +450,12 @@
                   <div class="flex items-center justify-between pt-2">
                     <div class="flex items-center space-x-6">
                       <button
-                        class="reviews justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 hover:bg-accent h-9 rounded-md px-3 flex items-center space-x-2 text-muted-foreground hover:text-primary"
+                        class="delete justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 hover:bg-accent h-9 rounded-md px-3 flex items-center space-x-2 text-muted-foreground hover:text-primary"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          class="lucide lucide-message-circle w-4 h-4"
-                          style="scale: 1.5"
-                        >
-                          <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg
-                        ><span class="text-l">8</span>
+                        <i class="fa-solid fa-trash"></i>
                       </button>
                     </div>
                   </div>
-                </div>
-              </div>
-              <div
-                data-state="open"
-                class="comments-holder fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
-                data-aria-hidden="true"
-                style="pointer-events: auto; display: none"
-              >
-                <div
-                  role="dialog"
-                  id="radix-:r0:"
-                  aria-describedby="radix-:r2:"
-                  aria-labelledby="radix-:r1:"
-                  data-state="open"
-                  class="fixed left-[50%] top-[50%] z-50 grid w-full translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg max-w-2xl max-h-[80vh] overflow-y-auto"
-                  tabindex="-1"
-                  style="pointer-events: auto"
-                >
-                  <div
-                    class="flex flex-col space-y-1.5 text-center sm:text-left"
-                  >
-                    <h2
-                      id="radix-:r1:"
-                      class="text-lg font-semibold leading-none tracking-tight"
-                    >
-                      Community Reviews &amp; Comments
-                    </h2>
-                  </div>
-                  <div class="space-y-4">
-                    <div class="space-y-4">
-                      <% if(post.comments.length > 0){ %>
-                      <%(post.comments).forEach((comment)=>{%>
-
-                      <div class="flex space-x-3 p-3 rounded-lg bg-muted/30">
-                        <span
-                          class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"
-                          ><span
-                            class="flex h-full w-full items-center justify-center rounded-full bg-primary/10 text-primary text-xs"
-                          >
-                            <%= comment.commenter[0].toUpperCase() %>
-                          </span></span
-                        >
-                        <div class="flex-1">
-                          <div class="flex items-center space-x-2 mb-1">
-                            <span class="font-medium text-sm"
-                              ><%= comment.commenter%></span
-                            >
-                          </div>
-                          <p class="text-sm text-foreground">
-                            <%= comment.review %>
-                          </p>
-                        </div>
-                      </div>
-
-                      <%});} else{%>
-
-                      <p class="text-sm text-foreground">
-                        No comments yet, be first to comment.
-                      </p>
-
-                      <%}%>
-                    </div>
-                    <div class="flex space-x-3 pt-4 border-t border-border">
-                      <span
-                        class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"
-                        ><span
-                          class="user-label flex h-full w-full items-center justify-center rounded-full bg-primary/10 text-primary text-xs"
-                        ></span
-                      ></span>
-                      <div class="flex-1 flex space-x-2">
-                        <input
-                          type="text"
-                          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
-                          placeholder="Add your review or observation..."
-                          value=""
-                        /><button
-                          id="<%=post.post_id%>"
-                          class="send-btn inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="24"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            class="lucide lucide-send w-4 h-4"
-                          >
-                            <path
-                              d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"
-                            ></path>
-                            <path d="m21.854 2.147-10.94 10.939"></path>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="close-btn absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity data-[state=open]:bg-accent data-[state=open]:text-muted-foreground hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="24"
-                      height="24"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      class="lucide lucide-x h-4 w-4"
-                    >
-                      <path d="M18 6 6 18"></path>
-                      <path d="m6 6 12 12"></path></svg
-                    ><span class="sr-only">Close</span>
-                  </button>
                 </div>
               </div>
               <%}) %>
@@ -599,15 +466,29 @@
     </div>
     <script>
       window.onload = function () {
-        //user label for comments
-        var labelArr = Array.from(
-          document.getElementsByClassName("user-label")
-        );
+        var postsArr = Array.from(document.getElementsByClassName("post"));
+        var deleteArr = Array.from(document.getElementsByClassName("delete"));
+        var postCounter = 0;
+        var deleteMapper = new Map();
+        deleteArr.forEach(function (deleteBtn) {
+          deleteMapper.set(deleteBtn, postsArr[postCounter]);
+          postCounter++;
 
-        labelArr.forEach((label) => {
-          label.textContent = sessionStorage.getItem("user")[0].toUpperCase();
+          deleteBtn.addEventListener("click", function () {
+            var id = deleteMapper.get(deleteBtn).getAttribute("id");
+            fetch("/posts", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id }),
+            })
+              .then((Response) => Response.json())
+              .then((data) => {
+                if (data.message == "Deleted") {
+                  window.location.href = "/myposts";
+                }
+              });
+          });
         });
-        console.log(sessionStorage.getItem("user")[0]);
 
         //Details dropdown
         var analysisBoxArr = Array.from(
@@ -629,82 +510,6 @@
             } else {
               detailBtn.classList.remove("show");
               analysisBox.style.height = "125px";
-            }
-          });
-        });
-
-        //Comment section
-        var commentsHolderArr = Array.from(
-          document.getElementsByClassName("comments-holder")
-        );
-        var reviewsBtnArr = Array.from(
-          document.getElementsByClassName("reviews")
-        );
-        var reviewsMapper = new Map();
-        var commentsHolderCounter = 0;
-
-        reviewsBtnArr.forEach((reviewBtn) => {
-          reviewsMapper.set(
-            reviewBtn,
-            commentsHolderArr[commentsHolderCounter]
-          );
-          commentsHolderCounter++;
-
-          reviewBtn.addEventListener("click", function () {
-            let postComments = reviewsMapper.get(reviewBtn);
-            postComments.style.display = "block";
-          });
-        });
-
-        //Close buttons for comment modals
-        var closeBtns = Array.from(
-          document.getElementsByClassName("close-btn")
-        );
-        closeBtns.forEach((btn) => {
-          btn.addEventListener("click", function () {
-            let modalHolder = btn.parentElement.parentElement;
-            modalHolder.style.display = "none";
-          });
-        });
-
-        // sending a comment
-        var inputArr = Array.from(document.getElementsByTagName("input"));
-        var sendArr = Array.from(document.getElementsByClassName("send-btn"));
-        var inputCounter = 0;
-        var sendMapper = new Map();
-
-        sendArr.forEach((sendBtn) => {
-          sendMapper.set(sendBtn, inputArr[inputCounter]);
-          inputCounter++;
-
-          sendBtn.addEventListener("click", function () {
-            let input = sendMapper.get(sendBtn);
-            let review = input.value.trim();
-            if (review.length > 1) {
-              // fetch api
-              let commenter = sessionStorage.getItem("user").split("@")[0];
-              let postId = sendBtn.getAttribute("id");
-              console.log({ postId, review, commenter });
-              fetch("/comments", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  review,
-                  commenter,
-                  postId,
-                }),
-              })
-                .then((Response) => Response.json())
-                .then((data) => {
-                  if (data.message == "sent") {
-                    alert("Comment sent, refresh page to view.");
-                    input.value = "";
-                  } else {
-                    alert("Error! Comment not sent");
-                  }
-                });
-            } else {
-              alert("Please provide more content for the comment.");
             }
           });
         });
