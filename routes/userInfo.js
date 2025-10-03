@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const crpto = require("crypto");
 const { type } = require("os");
+const ws = require("ws");
 const storage = multer.diskStorage({
   limits: {
     fileSize: 20 * 1024 * 1024, // 20 Megabytes in bytes
@@ -147,6 +148,60 @@ Here is the content:
 
 `;
 
+const milesPersona = `
+
+You are MILES (Media & Information Literacy Engagement System), an AI tutor whose mission is to help users become smarter consumers and producers of information.
+
+## Persona:
+- Tone: Friendly, clear, engaging, supportive (never condescending).
+- Style: Conversational, like a knowledgeable mentor who explains things simply with real-world examples.
+- Approach: Evidence-based, practical, and neutral. Encourage critical thinking, not blind acceptance.
+- Role: A guide who explains concepts, provides examples, asks reflective questions, and suggests practical tools or steps.
+- Constraints: Always avoid political bias, stereotypes, or judgmental language.
+
+## Core Objectives:
+1. **Educate on Media & Information Literacy (MIL):**
+   - Teach users how to evaluate credibility of information, sources, and media.
+   - Explain fact-checking methods, source reliability, bias detection, misinformation/disinformation tactics.
+   - Provide case studies and simple frameworks (e.g., SIFT, CRAAP test).
+   - Introduce fact-checking tools and reliable databases.
+
+2. **Interactive Tutoring:**
+   - Answer user questions clearly with structured explanations.
+   - Where useful, provide step-by-step guides or checklists.
+   - Ask reflective questions to engage the user (“What do you think?” “Have you seen this before?”).
+   - Adapt difficulty: If a beginner, explain simply; if advanced, dive deeper.
+
+3. **Fact-Checking Assistant (Optional Mode):**
+   - If a user shares text or claims, walk them through how to evaluate it.
+   - Give examples of how to cross-check sources and spot red flags.
+   - Do not just state “true” or “false”—explain reasoning.
+
+4. **Gamification & Engagement:**
+   - Use simple challenges, quizzes, or scenario-based questions (e.g., “Spot the fake headline”).
+   - Reward curiosity with encouragement, credibility tips, or badges (conceptually).
+   - Use color-coded trust language when evaluating credibility (green, yellow, orange, red).
+
+## Guidelines:
+- Always explain **why** information is credible or not, not just the conclusion.
+- Encourage curiosity and skepticism in a healthy way.
+- Use simple analogies or real-world scenarios where possible.
+- Keep answers concise but expandable (short summary + option for more detail).
+- If you don’t know or evidence is weak, admit uncertainty and suggest where the user can check.
+
+## Output Format:
+- Conversational response to the user’s input.
+- Where relevant, include:
+  - ✅ Key takeaway (1–2 sentence summary)
+  - 📌 Practical tip (user can apply immediately)
+  - 💡 Example (optional, if it helps understanding)
+- When explaining frameworks or steps, use clear bullet points or numbered lists.
+
+Remember: You are not just answering questions—you are shaping better media & information literacy habits. Your goal is to leave the user a little wiser after every interaction.
+KEEP YOUR RESPONSES SHORT AND CONSICE.
+Here is the conversation:
+`;
+
 const responseStructure = {
   type: Type.OBJECT,
   properties: {
@@ -190,6 +245,55 @@ async function fileToGenerativePart(path, mimeType) {
   };
 }
 
+//Web Socket for chatbot
+const wss = new ws.Server({ port: process.env.WSS });
+console.log("Web Socket server started on ws://localhost:5001");
+
+const chatbot = new GoogleGenAI({});
+const idempotentKeys = [];
+
+wss.on("connection", async function (ws) {
+  ws.on("message", async function (clientData) {
+    let messsage = clientData.toString();
+    message = await JSON.parse(messsage);
+    let key = messsage.key;
+    let keyExists = false;
+    for (let i = 0; i < idempotentKeys.length; i++) {
+      if (key == idempotentKeys[i]) {
+        keyExists = true;
+      }
+    }
+    let emailValue = message.user;
+    if (!keyExists) {
+      idempotentKeys.push(key);
+      let connection = await connectionPromise;
+
+      await connection.query(
+        "update users set rep_points = rep_points + 1 where email = ?",
+        [emailValue]
+      );
+
+      console.log("Updated rep points");
+    }
+
+    const prompt = message.promptToSend;
+    const response = await chatbot.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: milesPersona + prompt,
+    });
+
+    if (response.text) {
+      ws.send(response.text);
+    } else {
+      ws.send(response.promptFeedback);
+    }
+  });
+
+  ws.on("close", function () {
+    console.log("Client Disconnected");
+  });
+});
+
 // Profile page
 router.get("/profile", (req, res) => {
   if (req.session.user) {
@@ -201,7 +305,7 @@ router.get("/profile", (req, res) => {
     let connection = await connectionPromise;
     var user = req.session.user.email;
     var [userInfo] = await connection.query(
-      "select username, cred_score, reviews_given, rep_points from users where email = ?",
+      "select username, rep_points, reviews_given, no_of_posts from users where email = ?",
       [user]
     );
     userInfo = userInfo[0];
@@ -401,6 +505,16 @@ router.post("/post", upload.single("image"), (req, res) => {
                 aiAnalysis,
               ];
               await connection.query(dbQuery, dbArray);
+
+              // Add rep points and posts
+              await connection.query(
+                "update users set rep_points = rep_points + 1 where email = ?",
+                [req.session.user.email]
+              );
+              await connection.query(
+                "update users set no_of_posts = no_of_posts + 1 where email = ?",
+                [req.session.user.email]
+              );
               console.log("Finished loading to database");
 
               //Send response to user.
@@ -522,11 +636,25 @@ router.post("/comments", (req, res) => {
       [commentId, postId, commenter, review]
     );
 
+    await connection.query(
+      "update users set reviews_given = reviews_given + 1 where email = ?",
+      [req.session.user.email]
+    );
+
     console.log("Finished loading comments");
     res.json({ message: "sent" });
   }
   if (req.session.user) {
     main();
+  } else {
+    res.render("401");
+  }
+});
+
+//Chatbot page
+router.get("/chatbot", (req, res) => {
+  if (req.session.user) {
+    res.render("chatbot");
   } else {
     res.render("401");
   }

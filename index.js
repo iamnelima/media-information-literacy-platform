@@ -7,7 +7,9 @@ require("dotenv").config();
 //Set up the server
 const app = express();
 app.listen(process.env.PORT || 5000, () => {
-  console.log("Server running on port 5000 on local host");
+  console.log(
+    "Server running on port 5000 on local host, go to: http://localhost:5000/signin"
+  );
 });
 
 // Set view engine
