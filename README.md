@@ -15,7 +15,7 @@ It combines **AI-powered fact-checking**, **community reviews**, and **gamificat
 ### Web Sockets
 * Use of web Sockets for chatbot
 
-### Idompotency
+### Idempotency
 * Use idompotency for reputation points awarding to prevent susbsequent addition of points.
 
 ### 🏠 Home Feed
@@ -107,7 +107,3 @@ MILES automatically evaluates uploaded images and text for appropriateness.
 ---
 
 ✨ **MILES** empowers communities to think critically, check sources, and fight misinformation together.
-
----
-
-Would you like me to also generate a **shorter README version** (just features, setup, and objectives) that you can use as a lightweight intro, and keep this one as the full version?
