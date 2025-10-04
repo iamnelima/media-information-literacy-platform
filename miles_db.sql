@@ -14,7 +14,7 @@ CREATE INDEX email_index ON users(email);
 CREATE TABLE posts(
 	post_id VARCHAR(30) PRIMARY KEY,
     author VARCHAR(50) NOT NULL,
-    image_location TEXT NOT NULL,
+    image_location TEXT ,
     text_content TEXT NOT NULL,
     credibility_score INT NOT NULL,
     date_of_check DATE NOT NULL,
