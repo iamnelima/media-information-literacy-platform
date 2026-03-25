@@ -134,6 +134,7 @@ Produce **valid JSON** that matches this schema exactly.
 * If you cannot find any reliable sources, set claim_verdict to Insufficient Evidence and claim_score to a conservative low value (e.g., 20–40) with clear rationale.
 * Always include date_of_check and request missing context if that drastically affects credibility (but still produce a best-effort judgment).
 * Carefully categorize the post into a \`sector\` from these options: Politics, Health, Tech, Agriculture, Entertainment, General.
+* **CONTENT GUARDRAILS:** If the user's post is a personal lifestyle update (e.g., "It's my birthday", "I ate pizza"), spam, or completely irrelevant chatter that is not a public claim/news, YOU MUST REJECT IT. Set \`verdict_label\` to EXACTLY "REJECTED_PERSONAL", set \`credibilityScore\` to 0, and \`verdict_color\` to "red". Celebrity news (e.g., "Rihanna's house was shot at") IS considered valid public news and should be allowed (usually categorized as Entertainment).
 
 **EXAMPLE:**
 
@@ -214,12 +215,12 @@ const responseStructure = {
     verdict_label: {
       type: Type.STRING,
       description:
-        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red). If it is a personal/spam post, use EXACTLY "REJECTED_PERSONAL".',
     },
     verdict_color: {
       type: Type.STRING,
       description:
-        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red). If rejected, use "red".',
     },
     explanation: {
       type: Type.STRING,
@@ -494,12 +495,44 @@ router.post("/post", upload.single("image"), (req, res) => {
             });
            */
 
+            // Guardrail Check: Block Personal/Spam Posts
+            if (verdictLabel === "REJECTED_PERSONAL") {
+              console.log("Blocked personal/spam post from " + author);
+              return res.json({
+                message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
+                color: "red"
+              });
+            }
+
+            // Claim Detection: Count similar posts already in the DB
+            var claimCount = 1;
+            try {
+              const connection = await connectionPromise;
+              // Extract first 5 significant words from the content as keywords
+              const keywords = textContent
+                .replace(/[^a-zA-Z0-9 ]/g, '')
+                .split(' ')
+                .filter(w => w.length > 4)
+                .slice(0, 5);
+              if (keywords.length > 0) {
+                const likeClause = keywords.map(() => 'text_content LIKE ?').join(' OR ');
+                const likeValues = keywords.map(w => `%${w}%`);
+                const [similar] = await connection.query(
+                  `SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`,
+                  likeValues
+                );
+                claimCount = (similar[0].cnt || 0) + 1;
+              }
+            } catch (claimErr) {
+              console.warn('Claim count error:', claimErr.message);
+            }
+
             // Add data to database.
             try {
               const connection = await connectionPromise;
 
               let dbQuery =
-                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW());";
               let dbArray = [
                 postId,
                 author,
@@ -511,8 +544,14 @@ router.post("/post", upload.single("image"), (req, res) => {
                 verdictColor,
                 aiAnalysis,
                 sector,
+                claimCount,
               ];
               await connection.query(dbQuery, dbArray);
+
+              // Auto-delete safety net: remove any post that slipped past guardrails
+              await connection.query(
+                "DELETE FROM posts WHERE verdict_label = 'REJECTED_PERSONAL'"
+              );
 
               // Add rep points and posts
               await connection.query(
@@ -556,7 +595,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector from posts order by date_of_check desc limit 20;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -597,7 +636,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Fetch posts from database for this specific sector
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector from posts where LOWER(sector) = LOWER(?) order by date_of_check desc limit 20;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
       [sectorName]
     );
 

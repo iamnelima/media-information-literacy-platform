@@ -137,17 +137,21 @@ function fetchJSON(url) {
 
 // ───── Sector → NewsAPI category mapping ────────────────────────────────────
 const SECTOR_MAP = [
-  { sector: "Politics", category: "politics", count: 5 },
-  { sector: "Health", category: "health", count: 5 },
-  { sector: "Tech", category: "technology", count: 5 },
-  { sector: "Business", category: "business", count: 3 },
-  { sector: "Science", category: "science", count: 3 },
-  { sector: "Entertainment", category: "entertainment", count: 2 },
+  { sector: "Politics", category: "politics", count: 8 },
+  { sector: "Health", category: "health", count: 8 },
+  { sector: "Tech", category: "technology", count: 8 },
+  { sector: "Business", category: "business", count: 5 },
+  { sector: "Science", category: "science", count: 5 },
+  { sector: "Entertainment", category: "entertainment", count: 5 },
+  { sector: "General", category: null, count: 10 },
 ];
 
 // ───── Main seeder ───────────────────────────────────────────────────────────
 async function seedSector({ sector, category, count }) {
-  const url = `https://newsapi.org/v2/top-headlines?category=${category}&language=en&pageSize=${count}&apiKey=${NEWS_API_KEY}`;
+  let url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=${count}&apiKey=${NEWS_API_KEY}`;
+  if (category) {
+    url += `&category=${category}`;
+  }
   console.log(`\n📥  Fetching ${count} ${sector} articles…`);
 
   let data;
@@ -207,7 +211,7 @@ async function seedSector({ sector, category, count }) {
     let aiResult;
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: credibilityPrompt + text,
         config: {
           responseMimeType: "application/json",
@@ -233,7 +237,7 @@ async function seedSector({ sector, category, count }) {
     // ── Insert into DB ──
     try {
       await db.query(
-        "INSERT INTO posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,1,NOW())",
         [
           postId,
           author,
@@ -256,8 +260,8 @@ async function seedSector({ sector, category, count }) {
       }
     }
 
-    // Small delay to avoid hammering Gemini rate limits
-    await new Promise((r) => setTimeout(r, 1500));
+    // Delay to stay within 15 RPM free-tier limit
+    await new Promise((r) => setTimeout(r, 5000));
   }
 }
 

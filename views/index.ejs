@@ -122,6 +122,9 @@
                     <a href="/sectors/politics" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Politics</a>
                     <a href="/sectors/health" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Health</a>
                     <a href="/sectors/tech" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Tech</a>
+                    <a href="/sectors/business" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Business</a>
+                    <a href="/sectors/science" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Science</a>
+                    <a href="/sectors/entertainment" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Entertainment</a>
                     <a href="/sectors/agriculture" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors">Agriculture</a>
                   </div>
                 </div><a
@@ -257,7 +260,10 @@
               <a href="/sectors/politics" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Politics</a>
               <a href="/sectors/health" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Health</a>
               <a href="/sectors/tech" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Tech</a>
-              <a href="/sectors/agriculture" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Agriculture</a>
+              <a href="/sectors/business" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Business</a>
+              <a href="/sectors/science" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Science</a>
+              <a href="/sectors/entertainment" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Entertainment</a>
+              <a href="/sectors/agriculture" class="flex items-center col-span-2 space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Agriculture</a>
             </div>
           </div>
         </nav>
@@ -367,6 +373,16 @@
                         Sector: <strong><%= post.sector %></strong>
                       </div>
                     <% } %>
+                    <% if(post.claim_count && post.claim_count > 1) { %>
+                      <div class="mt-2 ml-1 text-xs px-2 py-1 rounded inline-block font-semibold" style="background:#fff3cd; color:#856404; border:1px solid #ffc107;">
+                        📢 This claim has appeared <strong><%= post.claim_count %></strong> time<%= post.claim_count === 1 ? '' : 's' %> on MILES
+                      </div>
+                    <% } %>
+                    <% if(post.created_at) { %>
+                      <div class="mt-1 text-xs text-muted-foreground" style="opacity:0.6;">
+                        Posted: <%= new Date(post.created_at).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) %>
+                      </div>
+                    <% } %>
                   </div>
                   <hr />
                   <div class="bg-muted/30 rounded-lg p-4 space-y-3 ai-analysis">
@@ -379,7 +395,7 @@
                         </div>
                         <div
                           class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent hover:bg-primary/80 bg-credible-high text-white font-medium"
-                          style="background: <%=post.verdict_color%>"
+                          style="background: <%= post.verdict_color || '#6b7280' %>"
                         >
                           <%= post.verdict_label %>
                         </div>
