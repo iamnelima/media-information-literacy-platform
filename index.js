@@ -6,9 +6,9 @@ require("dotenv").config();
 
 //Set up the server
 const app = express();
-app.listen(process.env.PORT || 5000, () => {
+app.listen(process.env.PORT || 3003, () => {
   console.log(
-    "Server running on port 5000 on local host, go to: http://localhost:5000/signin"
+    "Server running on port 3003 on local host, go to: http://localhost:3003/signin"
   );
 });
 
@@ -27,7 +27,7 @@ app.use(
     //include store: for prod
     secret: process.env.SESSION_SECRET,
     resave: false,
-    saveUnitialized: false,
+    saveUninitialized: false,
     rolling: true,
     unset: "destroy",
     cookie: {
