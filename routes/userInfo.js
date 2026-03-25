@@ -133,6 +133,7 @@ Produce **valid JSON** that matches this schema exactly.
 * When quoting, keep quotes less than 25 words.
 * If you cannot find any reliable sources, set claim_verdict to Insufficient Evidence and claim_score to a conservative low value (e.g., 20–40) with clear rationale.
 * Always include date_of_check and request missing context if that drastically affects credibility (but still produce a best-effort judgment).
+* Carefully categorize the post into a \`sector\` from these options: Politics, Health, Tech, Agriculture, Entertainment, General.
 
 **EXAMPLE:**
 
@@ -140,8 +141,9 @@ Produce **valid JSON** that matches this schema exactly.
     "credibility_score": 85,
     "verdict_label": "Highly Credible",
     "verdict_color": "green",
-    "explanation": "Multiple primary sources and a fact-check confirm this; no contradictory evidence found."
-
+    "explanation": "Multiple primary sources and a fact-check confirm this; no contradictory evidence found.",
+    "sector": "Politics",
+    "date_of_check": "2024-05-20"
 }
 
 Here is the content:
@@ -226,6 +228,10 @@ const responseStructure = {
     date_of_check: {
       type: Type.STRING,
       description: "The date the check was performed (YYYY-MM-DD).",
+    },
+    sector: {
+      type: Type.STRING,
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
     },
   },
 };
@@ -472,6 +478,7 @@ router.post("/post", upload.single("image"), (req, res) => {
             var dateOfCheck = aiResponse.date_of_check;
             var verdictLabel = aiResponse.verdict_label;
             var verdictColor = aiResponse.verdict_color;
+            var sector = req.body.sector || aiResponse.sector || "General";
 
             /*
             console.log({
@@ -492,7 +499,7 @@ router.post("/post", upload.single("image"), (req, res) => {
               const connection = await connectionPromise;
 
               let dbQuery =
-                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis) values(?, ?, ?, ?, ?, ?, ?, ?, ? );";
+                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
               let dbArray = [
                 postId,
                 author,
@@ -503,6 +510,7 @@ router.post("/post", upload.single("image"), (req, res) => {
                 verdictLabel,
                 verdictColor,
                 aiAnalysis,
+                sector,
               ];
               await connection.query(dbQuery, dbArray);
 
@@ -548,7 +556,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis from posts limit 10;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector from posts order by date_of_check desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -570,8 +578,51 @@ router.get("/", (req, res) => {
       });
     });
 
-    res.render("index", { posts });
+    res.render("index", { posts, pageTitle: "Media Literacy Feed", currentSector: null });
   }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
+});
+
+// Sector pages
+router.get("/sectors/:sectorName", (req, res) => {
+  let sectorName = req.params.sectorName;
+  // Capitalize sector name
+  sectorName = sectorName.charAt(0).toUpperCase() + sectorName.slice(1).toLowerCase();
+
+  async function main() {
+    //Fetch posts from database for this specific sector
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector from posts where LOWER(sector) = LOWER(?) order by date_of_check desc limit 20;",
+      [sectorName]
+    );
+
+    //Fetch comments/reviews from database
+    var [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments"
+    );
+
+    //Add a comment element for each post
+    posts.forEach((post) => {
+      post.comments = [];
+    });
+
+    postsCounter = 0;
+    comments.forEach((comment) => {
+      posts.forEach((post) => {
+        if (comment.post_id == post.post_id) {
+          post.comments.push(comment);
+        }
+      });
+    });
+
+    res.render("index", { posts, pageTitle: sectorName + " Sector", currentSector: sectorName });
+  }
+  
   if (req.session.user) {
     main();
   } else {

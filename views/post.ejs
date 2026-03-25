@@ -661,6 +661,14 @@
     </div>
     <script>
       window.onload = function () {
+        // Sector check
+        const urlParams = new URLSearchParams(window.location.search);
+        const sectorParam = urlParams.get('sector');
+        if (sectorParam) {
+           const titleElement = document.querySelector('h1.text-2xl.font-bold');
+           if (titleElement) titleElement.innerText = "Share to " + sectorParam + " Sector";
+        }
+
         //Max content for text area
         var textarea = document.getElementsByTagName("textarea")[0];
         var charCounter = document.getElementById("character-counter");
@@ -715,6 +723,9 @@
             let uploadData = new FormData();
             uploadData.append("image", imageFile);
             uploadData.append("content", textarea.value);
+            if (sectorParam) {
+              uploadData.append("sector", sectorParam);
+            }
 
             //Set the modal
             let modalHolder =
