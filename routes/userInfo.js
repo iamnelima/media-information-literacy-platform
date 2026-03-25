@@ -7,8 +7,28 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crpto = require("crypto");
-const { type } = require("os");
 const ws = require("ws");
+let verificationColumnsEnsured = false;
+
+function ensureUploadDirectories() {
+  fs.mkdirSync(path.join(__dirname, "../eval", "images"), { recursive: true });
+  fs.mkdirSync(path.join(__dirname, "../public", "posts"), { recursive: true });
+}
+
+function getGeminiClient() {
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "")
+    .replace(/^"|"$/g, "")
+    .trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing GEMINI_API_KEY. Add a valid Gemini API key to the .env file."
+    );
+  }
+
+  return new GoogleGenAI({ apiKey });
+}
+
 const storage = multer.diskStorage({
   limits: {
     fileSize: 20 * 1024 * 1024, // 20 Megabytes in bytes
@@ -16,6 +36,7 @@ const storage = multer.diskStorage({
     fieldSize: 10 * 1024 * 1024,
   },
   destination: (req, file, cb) => {
+    ensureUploadDirectories();
     cb(null, path.join(__dirname, "../eval", "images"));
   },
   filename: (req, file, cb) => {
@@ -237,6 +258,353 @@ const responseStructure = {
   },
 };
 
+const evidenceVerificationPrompt = `
+You are the evidence-based verification engine for MILES (Media & Information Literacy Engagement System).
+
+Your job:
+- Evaluate the credibility of the submitted text and optional image.
+- Break the submission into concrete factual claims.
+- Use grounded external evidence when available.
+- Be conservative: if evidence is weak, mixed, or missing, say that clearly.
+- Never invent source URLs, publications, or facts.
+
+Scoring rules:
+- 70 to 100 = Highly Credible, green
+- 60 to 69 = Somewhat Credible, yellow
+- 50 to 59 = Low Credibility, orange
+- Below 50 = Not Credible, red
+
+Return valid JSON only. Keep explanations concise and evidence-based.
+
+For key_claims:
+- Extract up to 3 important factual claims.
+- assessment must be one of: supported, mixed, weak, contradicted, unverified
+- confidence must be one of: high, medium, low
+
+Categorize the post into a sector:
+- sector must be one of: Politics, Health, Tech, Agriculture, Entertainment, General.
+
+If the user's post is a personal lifestyle update (e.g., "It's my birthday"), spam, or irrelevant chatter, you MUST REJECT IT.
+- Set verdict_label to "REJECTED_PERSONAL" and credibilityScore to 0.
+
+For supporting_evidence and contradicting_evidence:
+- Write short evidence summaries, not source titles.
+- Limit each list to at most 3 items.
+
+For recommended_checks:
+- Give practical follow-up checks a user can do next.
+- Limit to at most 3 items.
+
+Here is the content to verify:
+`;
+
+const evidenceResponseStructure = {
+  type: Type.OBJECT,
+  properties: {
+    credibilityScore: {
+      type: Type.INTEGER,
+      description: "Overall credibility score from 0 to 100",
+    },
+    verdict_label: {
+      type: Type.STRING,
+    },
+    verdict_color: {
+      type: Type.STRING,
+    },
+    explanation: {
+      type: Type.STRING,
+    },
+    date_of_check: {
+      type: Type.STRING,
+    },
+    verification_methodology: {
+      type: Type.STRING,
+    },
+    key_claims: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          claim: {
+            type: Type.STRING,
+          },
+          assessment: {
+            type: Type.STRING,
+          },
+          confidence: {
+            type: Type.STRING,
+          },
+          rationale: {
+            type: Type.STRING,
+          },
+        },
+      },
+    },
+    supporting_evidence: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+    contradicting_evidence: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+    recommended_checks: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.STRING,
+      },
+    },
+    sector: {
+      type: Type.STRING,
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
+    },
+  },
+};
+
+function inferVerdictColor(score) {
+  if (score >= 70) {
+    return "green";
+  }
+  if (score >= 60) {
+    return "yellow";
+  }
+  if (score >= 50) {
+    return "orange";
+  }
+  return "red";
+}
+
+function inferVerdictLabel(score) {
+  if (score >= 70) {
+    return "Highly Credible";
+  }
+  if (score >= 60) {
+    return "Somewhat Credible";
+  }
+  if (score >= 50) {
+    return "Low Credibility";
+  }
+  return "Not Credible";
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+function shouldUseGroundedVerification(content, hasImage) {
+  if (hasImage) {
+    return true;
+  }
+
+  const normalizedContent = (content || "").trim();
+  const claimSignals =
+    /\b\d{1,4}\b|%|\$|ksh|million|billion|according to|reported|study|research|official|breaking|news|claim|confirmed|announced|cases|deaths|votes|election|vaccine|virus|earthquake|flood|war\b/i;
+  const sentenceCount = normalizedContent
+    .split(/[.!?]+/)
+    .map((part) => part.trim())
+    .filter(Boolean).length;
+
+  return (
+    normalizedContent.length >= 180 ||
+    sentenceCount >= 2 ||
+    claimSignals.test(normalizedContent)
+  );
+}
+
+function buildVerificationPrompt(content, grounded) {
+  const modeInstruction = grounded
+    ? "Use an evidence-first verification approach. If live web retrieval is unavailable, be explicit about uncertainty and recommend concrete checks."
+    : "Use a rapid credibility triage. Do not wait for live grounding. Base the result on internal reasoning, obvious red flags, and claim structure. Keep recommended checks practical.";
+
+  return `${evidenceVerificationPrompt}\n${modeInstruction}\n\n${content}`;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableVerificationError(error) {
+  const status = error?.status;
+  const message = String(error?.message || "");
+
+  return (
+    status === 429 ||
+    status === 500 ||
+    status === 503 ||
+    message.includes("fetch failed") ||
+    message.includes("UNAVAILABLE")
+  );
+}
+
+async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: evidenceResponseStructure,
+        },
+      });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableVerificationError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      console.error(
+        `Verification request failed on attempt ${attempt}, retrying:`,
+        error
+      );
+      await sleep(1000 * attempt);
+    }
+  }
+
+  throw lastError;
+}
+
+function parseStoredVerification(value) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    console.error("Error parsing verification JSON:", error);
+    return null;
+  }
+}
+
+function extractGroundingMetadata(response) {
+  return response?.candidates?.[0]?.groundingMetadata || null;
+}
+
+function extractGroundedSources(response) {
+  const metadata = extractGroundingMetadata(response);
+  const chunks = metadata?.groundingChunks || [];
+  const seen = new Set();
+  const sources = [];
+
+  chunks.forEach((chunk) => {
+    const candidate = chunk.web || chunk.retrievedContext || chunk.maps;
+    const url = candidate?.uri;
+    if (!url || seen.has(url)) {
+      return;
+    }
+
+    seen.add(url);
+    sources.push({
+      title: candidate.title || candidate.text || "Source",
+      url,
+      domain: candidate.domain || "",
+    });
+  });
+
+  return sources.slice(0, 6);
+}
+
+function extractEvidenceTraces(response, sources) {
+  const metadata = extractGroundingMetadata(response);
+  const supports = metadata?.groundingSupports || [];
+  const chunks = metadata?.groundingChunks || [];
+
+  return supports
+    .map((support) => {
+      const segmentText = support?.segment?.text;
+      const citedSources = safeArray(support?.groundingChunkIndices)
+        .map((index) => {
+          const chunk = chunks[index];
+          const candidate = chunk?.web || chunk?.retrievedContext || chunk?.maps;
+          if (!candidate?.uri) {
+            return null;
+          }
+
+          return (
+            sources.find((source) => source.url === candidate.uri) || {
+              title: candidate.title || candidate.text || "Source",
+              url: candidate.uri,
+              domain: candidate.domain || "",
+            }
+          );
+        })
+        .filter(Boolean);
+
+      if (!segmentText || citedSources.length === 0) {
+        return null;
+      }
+
+      return {
+        segment: segmentText,
+        sources: citedSources.slice(0, 3),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function normalizeVerificationResult(aiResponse, response) {
+  const score = Number.isFinite(aiResponse?.credibilityScore)
+    ? aiResponse.credibilityScore
+    : 35;
+  const sources = extractGroundedSources(response);
+  const metadata = extractGroundingMetadata(response);
+
+  return {
+    credibilityScore: score,
+    verdict_label: aiResponse?.verdict_label || inferVerdictLabel(score),
+    verdict_color: aiResponse?.verdict_color || inferVerdictColor(score),
+    explanation:
+      aiResponse?.explanation ||
+      "Verification completed with limited evidence. Review the listed sources before relying on this content.",
+    date_of_check:
+      aiResponse?.date_of_check || new Date().toISOString().slice(0, 10),
+    verification_methodology:
+      aiResponse?.verification_methodology ||
+      (sources.length > 0
+        ? "Grounded web verification with claim decomposition."
+        : "Model-only verification with no grounded sources returned."),
+    key_claims: safeArray(aiResponse?.key_claims).slice(0, 3),
+    supporting_evidence: safeArray(aiResponse?.supporting_evidence).slice(0, 3),
+    contradicting_evidence: safeArray(aiResponse?.contradicting_evidence).slice(
+      0,
+      3
+    ),
+    recommended_checks: safeArray(aiResponse?.recommended_checks).slice(0, 3),
+    sources,
+    retrieval_queries: safeArray(
+      metadata?.webSearchQueries || metadata?.retrievalQueries
+    ).slice(0, 5),
+    evidence_traces: extractEvidenceTraces(response, sources),
+  };
+}
+
+async function ensureVerificationColumns() {
+  if (verificationColumnsEnsured) {
+    return;
+  }
+
+  const connection = await connectionPromise;
+  const [verificationColumn] = await connection.query(
+    "show columns from posts like 'verification_json'"
+  );
+
+  if (verificationColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column verification_json longtext null"
+    );
+  }
+
+  verificationColumnsEnsured = true;
+}
+
 //Generate hash for  image name
 function generateHash(data) {
   let hash = crpto.createHash("sha256").update(data).digest("hex");
@@ -256,7 +624,6 @@ async function fileToGenerativePart(path, mimeType) {
 const wss = new ws.Server({ port: process.env.WSS });
 console.log("Web Socket server started on ws://localhost:5001");
 
-const chatbot = new GoogleGenAI({});
 const idempotentKeys = [];
 
 wss.on("connection", async function (ws) {
@@ -284,6 +651,7 @@ wss.on("connection", async function (ws) {
     }
 
     const prompt = message.promptToSend;
+    const chatbot = getGeminiClient();
     const response = await chatbot.models.generateContent({
       model: "gemini-2.5-flash",
       contents: milesPersona + prompt,
@@ -345,7 +713,7 @@ router.get("/post", (req, res) => {
 
 router.post("/post", upload.single("image"), (req, res) => {
   async function imageEval(prompt, fileName) {
-    const ai = new GoogleGenAI({});
+    const ai = getGeminiClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: prompt,
@@ -394,166 +762,122 @@ router.post("/post", upload.single("image"), (req, res) => {
     }
   }
 
-  async function checkCredibility(prompt) {
-    const ai = new GoogleGenAI({});
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: responseStructure,
-      },
-    });
+  async function checkCredibility(prompt, useGrounding) {
+    const ai = getGeminiClient();
+    const response = await generateVerificationResponse(ai, prompt);
 
-    if (response.text) {
-      return JSON.parse(response.text);
-    } else {
+    if (!response.text) {
       console.log(response.promptFeedback);
+      throw new Error("No verification response was returned by the model.");
     }
+
+    return normalizeVerificationResult(JSON.parse(response.text), response);
   }
 
   async function main() {
     if (req.session.user) {
+      await ensureVerificationColumns();
+      ensureUploadDirectories();
       fs.readdir(
         path.join(__dirname, "../eval", "images"),
         async (err, files) => {
           if (err) {
-            console.err(
+            console.error(
               "Error while reading dir for image evaluation:\n" + err
             );
-            return;
+            return res.status(500).json({
+              message: "Could not prepare the verification workspace.",
+              color: "red",
+            });
           } else {
-            let content = await req.body.content;
-            let hash = generateHash(content);
-            let targetFile = "";
-            hash = hash.substring(43, 63);
-            files.forEach((file) => {
-              let name = file.split(".")[0];
-              if (name == hash) {
-                targetFile = file;
-              }
-            });
-
-            var imagePath = "";
-            var ext = "";
-            var dbImagePath = null;
-            var imagePassedToAi = null;
-            if (targetFile.trim() != "") {
-              //If the image exists
-              imagePath = path.join(__dirname, "../eval", "images", targetFile);
-              ext = targetFile.split(".")[1];
-              const imageMimeType = "image/" + ext;
-
-              //Create image part for the model
-              const image = await fileToGenerativePart(
-                imagePath,
-                imageMimeType
-              );
-              imagePassedToAi = image;
-              //Create an array for a multimodal prompt
-              console.log("Evaluating image");
-              var multimodalPrompt = [image, { text: imageEvalPrompt }];
-              var output = await imageEval(multimodalPrompt, targetFile); // returns array of filename and response.text if evaal is successful
-              dbImagePath = "posts/" + output[0];
-              console.log("Out of image evaluation function");
-            }
-
-            // Analyze the data and determine credibility
-            var postId = generateHash(content);
-            postId = postId.substring(33, 63);
-            var imageLocation = dbImagePath;
-            var textContent = content;
-            var author = req.session.user.email.split("@")[0];
-
-            if (imagePassedToAi) {
-              multimodalPrompt = [
-                imagePassedToAi,
-                { text: credibilityPrompt + content },
-              ];
-            } else {
-              multimodalPrompt = credibilityPrompt + content;
-            }
-            var aiResponse = await checkCredibility(multimodalPrompt);
-            var credScore = aiResponse.credibilityScore;
-            var aiAnalysis = aiResponse.explanation;
-            var dateOfCheck = aiResponse.date_of_check;
-            var verdictLabel = aiResponse.verdict_label;
-            var verdictColor = aiResponse.verdict_color;
-            var sector = req.body.sector || aiResponse.sector || "General";
-
-            /*
-            console.log({
-              postId,
-              author,
-              imageLocation,
-              textContent,
-              credScore,
-              dateOfCheck,
-              verdictLabel,
-              verdictColor,
-              aiAnalysis,
-            });
-           */
-
-            // Guardrail Check: Block Personal/Spam Posts
-            if (verdictLabel === "REJECTED_PERSONAL") {
-              console.log("Blocked personal/spam post from " + author);
-              return res.json({
-                message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
-                color: "red"
-              });
-            }
-
-            // Claim Detection: Count similar posts already in the DB
-            var claimCount = 1;
             try {
+              let content = await req.body.content;
+              let hash = generateHash(content);
+              let targetFile = "";
+              hash = hash.substring(43, 63);
+              files.forEach((file) => {
+                let name = file.split(".")[0];
+                if (name == hash) {
+                  targetFile = file;
+                }
+              });
+
+              var imagePath = "";
+              var ext = "";
+              var dbImagePath = null;
+              var imagePassedToAi = null;
+              if (targetFile.trim() != "") {
+                imagePath = path.join(__dirname, "../eval", "images", targetFile);
+                ext = targetFile.split(".")[1];
+                const imageMimeType = "image/" + ext;
+                const image = await fileToGenerativePart(imagePath, imageMimeType);
+                imagePassedToAi = image;
+
+                console.log("Evaluating image");
+                var multimodalPrompt = [image, { text: imageEvalPrompt }];
+                var output = await imageEval(multimodalPrompt, targetFile);
+                if (!Array.isArray(output)) return;
+                dbImagePath = "posts/" + output[0];
+              }
+
+              var postId = generateHash(content);
+              postId = postId.substring(33, 63);
+              var imageLocation = dbImagePath;
+              var textContent = content;
+              var author = req.session.user.email.split("@")[0];
+
+              const useGrounding = shouldUseGroundedVerification(content, Boolean(imagePassedToAi));
+              let aiPrompt = buildVerificationPrompt(content, useGrounding);
+
+              if (imagePassedToAi) {
+                multimodalPrompt = [imagePassedToAi, { text: aiPrompt }];
+              } else {
+                multimodalPrompt = aiPrompt;
+              }
+
+              var aiResponse = await checkCredibility(multimodalPrompt, useGrounding);
+              var credScore = aiResponse.credibilityScore;
+              var aiAnalysis = aiResponse.explanation;
+              var dateOfCheck = aiResponse.date_of_check;
+              var verdictLabel = aiResponse.verdict_label;
+              var verdictColor = aiResponse.verdict_color;
+              var sector = req.body.sector || aiResponse.sector || "General";
+              var verificationJson = JSON.stringify(aiResponse);
+
+              // Guardrail Check: Block Personal/Spam Posts
+              if (verdictLabel === "REJECTED_PERSONAL") {
+                console.log("Blocked personal/spam post from " + author);
+                return res.json({
+                  message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
+                  color: "red"
+                });
+              }
+
               const connection = await connectionPromise;
-              // Extract first 5 significant words from the content as keywords
-              const keywords = textContent
-                .replace(/[^a-zA-Z0-9 ]/g, '')
-                .split(' ')
-                .filter(w => w.length > 4)
-                .slice(0, 5);
+
+              // Claim Detection: Count similar posts
+              var claimCount = 1;
+              const keywords = textContent.replace(/[^a-zA-Z0-9 ]/g, '').split(' ').filter(w => w.length > 4).slice(0, 5);
               if (keywords.length > 0) {
                 const likeClause = keywords.map(() => 'text_content LIKE ?').join(' OR ');
-                const likeValues = keywords.map(w => `%${w}%`);
-                const [similar] = await connection.query(
-                  `SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`,
-                  likeValues
-                );
+                const [similar] = await connection.query(`SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`, keywords.map(w => `%${w}%`));
                 claimCount = (similar[0].cnt || 0) + 1;
               }
-            } catch (claimErr) {
-              console.warn('Claim count error:', claimErr.message);
-            }
 
-            // Add data to database.
-            try {
-              const connection = await connectionPromise;
-
-              let dbQuery =
-                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW());";
-              let dbArray = [
-                postId,
-                author,
-                imageLocation,
-                textContent,
-                credScore,
-                dateOfCheck,
-                verdictLabel,
-                verdictColor,
-                aiAnalysis,
-                sector,
-                claimCount,
-              ];
+              // Add data to database.
+              let dbQuery = "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?);";
+              let dbArray = [postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis, sector, claimCount, verificationJson];
               await connection.query(dbQuery, dbArray);
 
-              // Auto-delete safety net: remove any post that slipped past guardrails
-              await connection.query(
-                "DELETE FROM posts WHERE verdict_label = 'REJECTED_PERSONAL'"
-              );
+              // Auto-delete safety net
+              await connection.query("DELETE FROM posts WHERE verdict_label = 'REJECTED_PERSONAL'");
 
               // Add rep points and posts
+              await connection.query("update users set rep_points = rep_points + 1 where email = ?", [req.session.user.email]);
+              await connection.query("update users set no_of_posts = no_of_posts + 1 where email = ?", [req.session.user.email]);
+              
+              console.log("Finished loading to database");
+              return res.json({ message: "Successfully posted content. Thank you for your contribution.", color: "blue" });
               await connection.query(
                 "update users set rep_points = rep_points + 1 where email = ?",
                 [req.session.user.email]
@@ -564,19 +888,23 @@ router.post("/post", upload.single("image"), (req, res) => {
               );
               console.log("Finished loading to database");
 
-              //Send response to user.
-              res.json({
+              return res.json({
                 message:
                   "Successfully posted content. Thank you for your contribution.",
                 color: "blue",
               });
             } catch (e) {
-              console.log(
+              console.error(
                 "Error while loading to database. Error Code: " +
                   e.code +
                   "\n" +
                   e
               );
+              return res.status(500).json({
+                message:
+                  "Verification failed on the server. Check the terminal log for the exact error.",
+                color: "red",
+              });
             }
           }
         }
@@ -586,16 +914,25 @@ router.post("/post", upload.single("image"), (req, res) => {
     }
   }
 
-  main();
+  main().catch((error) => {
+    console.error("Unexpected post route error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Unexpected verification error.",
+        color: "red",
+      });
+    }
+  });
 });
 
 //Home page
 router.get("/", (req, res) => {
   async function main() {
+    await ensureVerificationColumns();
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts order by created_at desc limit 20;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -606,6 +943,7 @@ router.get("/", (req, res) => {
     //Add a comment element for each post
     posts.forEach((post) => {
       post.comments = [];
+      post.verification = parseStoredVerification(post.verification_json);
     });
 
     postsCounter = 0;
@@ -636,7 +974,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Fetch posts from database for this specific sector
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
       [sectorName]
     );
 
@@ -672,13 +1010,18 @@ router.get("/sectors/:sectorName", (req, res) => {
 //My posts page
 router.get("/myposts", (req, res) => {
   async function main(user) {
+    await ensureVerificationColumns();
     //Fetch data fom database
 
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis from posts where author = ? limit 10;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where author = ? order by created_at desc limit 10;",
       [user]
     );
+
+    posts.forEach((post) => {
+      post.verification = parseStoredVerification(post.verification_json);
+    });
 
     res.render("myposts", { posts });
   }
