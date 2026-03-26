@@ -592,6 +592,33 @@ async function ensureVerificationColumns() {
     );
   }
 
+  const [sectorColumn] = await connection.query(
+    "show columns from posts like 'sector'"
+  );
+  if (sectorColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column sector varchar(255) default 'General'"
+    );
+  }
+
+  const [claimCountColumn] = await connection.query(
+    "show columns from posts like 'claim_count'"
+  );
+  if (claimCountColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column claim_count int default 1"
+    );
+  }
+
+  const [createdAtColumn] = await connection.query(
+    "show columns from posts like 'created_at'"
+  );
+  if (createdAtColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column created_at timestamp default current_timestamp"
+    );
+  }
+
   verificationColumnsEnsured = true;
 }
 
