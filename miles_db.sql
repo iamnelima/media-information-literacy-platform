@@ -20,7 +20,8 @@ CREATE TABLE posts(
     date_of_check DATE NOT NULL,
     verdict_label VARCHAR(50) NOT NULL,
     verdict_color VARCHAR(20) NOT NULL,
-    ai_analysis TEXT NOT NULL
+    ai_analysis TEXT NOT NULL,
+    verification_json LONGTEXT NULL
     );
 
 CREATE INDEX posts_index ON posts(post_id); 

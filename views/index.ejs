@@ -445,6 +445,79 @@
                       >
                       <%=post.ai_analysis%>
                     </p>
+                    <% if (post.verification) { %>
+                    <div class="verification-block">
+                      <% if (post.verification.verification_methodology) { %>
+                      <p class="verification-meta">
+                        <span class="font-medium text-foreground">Method:</span>
+                        <%= post.verification.verification_methodology %>
+                      </p>
+                      <% } %>
+                      <% if (post.verification.key_claims && post.verification.key_claims.length > 0) { %>
+                      <div class="verification-section">
+                        <p class="verification-title">Key Claims</p>
+                        <% post.verification.key_claims.forEach((claim) => { %>
+                        <div class="verification-item">
+                          <p class="verification-claim"><%= claim.claim %></p>
+                          <p class="verification-meta">
+                            <strong><%= claim.assessment %></strong>
+                            <% if (claim.confidence) { %>
+                            | <%= claim.confidence %> confidence
+                            <% } %>
+                          </p>
+                          <% if (claim.rationale) { %>
+                          <p class="verification-meta"><%= claim.rationale %></p>
+                          <% } %>
+                        </div>
+                        <% }) %>
+                      </div>
+                      <% } %>
+                      <% if (post.verification.supporting_evidence && post.verification.supporting_evidence.length > 0) { %>
+                      <div class="verification-section">
+                        <p class="verification-title">Supporting Evidence</p>
+                        <% post.verification.supporting_evidence.forEach((item) => { %>
+                        <p class="verification-item"><%= item %></p>
+                        <% }) %>
+                      </div>
+                      <% } %>
+                      <% if (post.verification.contradicting_evidence && post.verification.contradicting_evidence.length > 0) { %>
+                      <div class="verification-section">
+                        <p class="verification-title">Contradicting Evidence</p>
+                        <% post.verification.contradicting_evidence.forEach((item) => { %>
+                        <p class="verification-item"><%= item %></p>
+                        <% }) %>
+                      </div>
+                      <% } %>
+                      <% if (post.verification.sources && post.verification.sources.length > 0) { %>
+                      <div class="verification-section">
+                        <p class="verification-title">Evidence Sources</p>
+                        <div class="source-list">
+                          <% post.verification.sources.forEach((source) => { %>
+                          <a
+                            class="source-chip"
+                            href="<%= source.url %>"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <span><%= source.title %></span>
+                            <% if (source.domain) { %>
+                            <small><%= source.domain %></small>
+                            <% } %>
+                          </a>
+                          <% }) %>
+                        </div>
+                      </div>
+                      <% } %>
+                      <% if (post.verification.recommended_checks && post.verification.recommended_checks.length > 0) { %>
+                      <div class="verification-section">
+                        <p class="verification-title">Next Checks</p>
+                        <% post.verification.recommended_checks.forEach((item) => { %>
+                        <p class="verification-item"><%= item %></p>
+                        <% }) %>
+                      </div>
+                      <% } %>
+                    </div>
+                    <% } %>
                   </div>
                   <div class="flex items-center justify-between pt-2">
                     <div class="flex items-center space-x-6">

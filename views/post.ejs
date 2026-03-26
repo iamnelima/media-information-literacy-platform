@@ -360,7 +360,7 @@
             <div class="text-center space-y-2">
               <h1 class="text-2xl font-bold">Share Content for Analysis</h1>
               <p class="text-muted-foreground">
-                Post text or images to get AI-powered credibility analysis
+                Post text or images to get AI-powered, evidence-based verification
               </p>
               <p class="text-muted-foreground">
                 Please see our
@@ -523,8 +523,7 @@
                     <span class="text-primary text-xs font-bold">1</span>
                   </div>
                   <p class="text-sm">
-                    Your content is analyzed by our AI system for credibility
-                    indicators
+                    Your content is analyzed for claims, evidence, and source-backed credibility indicators
                   </p>
                 </div>
                 <div class="flex items-start space-x-3">
@@ -545,8 +544,7 @@
                     <span class="text-primary text-xs font-bold">3</span>
                   </div>
                   <p class="text-sm">
-                    Credibility scores help others make informed decisions about
-                    the information
+                    Credibility scores, claim checks, and source links help others make informed decisions about the information
                   </p>
                 </div>
               </div>
@@ -709,7 +707,7 @@
             errorMessage.innerText = "Please provide some text for context.";
             setTimeout(function () {
               errorMessage.innerText = "";
-            }, 5000);
+            }, 3003);
             return;
           } else {
             let uploadData = new FormData();
@@ -722,18 +720,18 @@
             let modal = document.getElementById("waiting");
             modalHolder.style.display = "flex";
             let messageArr = [
-              "Please wait while we process the content.",
-              "AI analyzing content.",
+              "Checking the post for credibility signals.",
+              "Looking for evidence when the content needs deeper verification.",
             ];
             let messageCounter = 0;
-            setInterval(function () {
+            let loadingInterval = setInterval(function () {
               modal.textContent = messageArr[messageCounter];
               messageCounter++;
 
               if (messageCounter > 1) {
                 messageCounter = 0;
               }
-            }, 3000);
+            }, 3003);
 
             fetch("/post", {
               method: "POST",
@@ -741,6 +739,7 @@
             })
               .then((Response) => Response.json())
               .then((data) => {
+                clearInterval(loadingInterval);
                 if (data.color == "red") {
                   userMessage.textContent = data.message;
                   userMessage.style.color = "red";
@@ -754,6 +753,13 @@
                   modal.textContent = "Successfully uploaded content.";
                   window.location.href = "/";
                 }
+              })
+              .catch(() => {
+                clearInterval(loadingInterval);
+                modalHolder.style.display = "none";
+                userMessage.textContent =
+                  "Verification failed. Please try again.";
+                userMessage.style.color = "red";
               });
           }
         });
