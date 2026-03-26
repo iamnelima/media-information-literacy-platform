@@ -154,6 +154,8 @@ Produce **valid JSON** that matches this schema exactly.
 * When quoting, keep quotes less than 25 words.
 * If you cannot find any reliable sources, set claim_verdict to Insufficient Evidence and claim_score to a conservative low value (e.g., 20–40) with clear rationale.
 * Always include date_of_check and request missing context if that drastically affects credibility (but still produce a best-effort judgment).
+* Carefully categorize the post into a \`sector\` from these options: Politics, Health, Tech, Agriculture, Entertainment, General.
+* **CONTENT GUARDRAILS:** If the user's post is a personal lifestyle update (e.g., "It's my birthday", "I ate pizza"), spam, or completely irrelevant chatter that is not a public claim/news, YOU MUST REJECT IT. Set \`verdict_label\` to EXACTLY "REJECTED_PERSONAL", set \`credibilityScore\` to 0, and \`verdict_color\` to "red". Celebrity news (e.g., "Rihanna's house was shot at") IS considered valid public news and should be allowed (usually categorized as Entertainment).
 
 **EXAMPLE:**
 
@@ -161,8 +163,9 @@ Produce **valid JSON** that matches this schema exactly.
     "credibility_score": 85,
     "verdict_label": "Highly Credible",
     "verdict_color": "green",
-    "explanation": "Multiple primary sources and a fact-check confirm this; no contradictory evidence found."
-
+    "explanation": "Multiple primary sources and a fact-check confirm this; no contradictory evidence found.",
+    "sector": "Politics",
+    "date_of_check": "2024-05-20"
 }
 
 Here is the content:
@@ -233,12 +236,12 @@ const responseStructure = {
     verdict_label: {
       type: Type.STRING,
       description:
-        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red). If it is a personal/spam post, use EXACTLY "REJECTED_PERSONAL".',
     },
     verdict_color: {
       type: Type.STRING,
       description:
-        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red)',
+        'greather or equal to 70 = "Highly Credible" (green), 60 to 69 = "Somewhat Credible" (yellow), 50 to 59 = "Low Credibility" (orange), less than 50 = "Not Credible" (red). If rejected, use "red".',
     },
     explanation: {
       type: Type.STRING,
@@ -247,6 +250,10 @@ const responseStructure = {
     date_of_check: {
       type: Type.STRING,
       description: "The date the check was performed (YYYY-MM-DD).",
+    },
+    sector: {
+      type: Type.STRING,
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
     },
   },
 };
@@ -840,11 +847,32 @@ router.post("/post", upload.single("image"), (req, res) => {
               var verdictLabel = aiResponse.verdict_label;
               var verdictColor = aiResponse.verdict_color;
               var verificationJson = JSON.stringify(aiResponse);
+              var sector = req.body.sector || aiResponse.sector || "General";
+              if (verdictLabel === "REJECTED_PERSONAL") {
+                console.log("Blocked personal/spam post from " + author);
+                return res.json({
+                  message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
+                  color: "red"
+                });
+              }
+              var claimCount = 1;
+              try {
+                const connection = await connectionPromise;
+                const keywords = textContent.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").filter(w => w.length > 4).slice(0, 5);
+                if (keywords.length > 0) {
+                  const likeClause = keywords.map(() => "text_content LIKE ?").join(" OR ");
+                  const likeValues = keywords.map(w => `%${w}%`);
+                  const [similar] = await connection.query(`SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`, likeValues);
+                  claimCount = (similar[0].cnt || 0) + 1;
+                }
+              } catch (claimErr) {
+                console.warn("Claim count error:", claimErr.message);
+              }
 
               const connection = await connectionPromise;
 
               let dbQuery =
-                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, verification_json) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ? );";
+                "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW());";
               let dbArray = [
                 postId,
                 author,
@@ -856,9 +884,15 @@ router.post("/post", upload.single("image"), (req, res) => {
                 verdictColor,
                 aiAnalysis,
                 verificationJson,
+                sector,
+                claimCount,
               ];
               await connection.query(dbQuery, dbArray);
 
+              // Auto-delete safety net: remove any post that slipped past guardrails
+              await connection.query(
+                "DELETE FROM posts WHERE verdict_label = \'REJECTED_PERSONAL\'"
+              );
               await connection.query(
                 "update users set rep_points = rep_points + 1 where email = ?",
                 [req.session.user.email]
@@ -913,7 +947,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json from posts limit 10;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -936,8 +970,51 @@ router.get("/", (req, res) => {
       });
     });
 
-    res.render("index", { posts });
+    res.render("index", { posts, pageTitle: "Media Literacy Feed", currentSector: null });
   }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
+});
+
+// Sector pages
+router.get("/sectors/:sectorName", (req, res) => {
+  let sectorName = req.params.sectorName;
+  // Capitalize sector name
+  sectorName = sectorName.charAt(0).toUpperCase() + sectorName.slice(1).toLowerCase();
+
+  async function main() {
+    //Fetch posts from database for this specific sector
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
+      [sectorName]
+    );
+
+    //Fetch comments/reviews from database
+    var [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments"
+    );
+
+    //Add a comment element for each post
+    posts.forEach((post) => {
+      post.comments = [];
+    });
+
+    postsCounter = 0;
+    comments.forEach((comment) => {
+      posts.forEach((post) => {
+        if (comment.post_id == post.post_id) {
+          post.comments.push(comment);
+        }
+      });
+    });
+
+    res.render("index", { posts, pageTitle: sectorName + " Sector", currentSector: sectorName });
+  }
+  
   if (req.session.user) {
     main();
   } else {
