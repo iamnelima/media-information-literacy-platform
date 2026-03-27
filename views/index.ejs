@@ -286,6 +286,13 @@
               </p>
             </div>
 
+            <!-- Feed Filters -->
+            <div class="flex items-center gap-2 flex-wrap" style="margin-bottom:4px;">
+              <button id="toggle-ai-btn" onclick="toggleAiFilter(this)" class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full border border-border/60 bg-card hover:bg-muted transition-colors" style="cursor:pointer;">
+                🤖 <span id="ai-btn-label">Hide AI-Generated</span>
+              </button>
+            </div>
+
             <!-- Inline Posting Form -->
             <div
               class="inline-posting-form-container rounded-lg border bg-card text-card-foreground shadow-sm border-border/50 mb-8"
@@ -336,7 +343,8 @@
               <% posts.forEach((post)=>{ %>
               <div
                 id="<%=post.post_id%>"
-                class="rounded-lg border bg-card text-card-foreground mb-6 shadow-sm hover:shadow-md transition-shadow duration-200 border-border/50"
+                class="post-card rounded-lg border bg-card text-card-foreground mb-6 shadow-sm hover:shadow-md transition-shadow duration-200 border-border/50"
+                data-ai="<%- post.is_ai_generated ? 'true' : 'false' %>"
               >
                 <div class="flex flex-col space-y-1.5 p-6 pb-3">
                   <div class="flex items-start justify-between">
@@ -393,15 +401,35 @@
                         Posted: <%= new Date(post.created_at).toLocaleDateString('en-US', {year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) %>
                       </div>
                     <% } %>
+                    <% if(post.is_ai_generated) { %>
+                      <div class="ai-generated-badge mt-2 inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full" style="background:rgba(139,92,246,0.12);color:#7c3aed;border:1px solid rgba(139,92,246,0.3);">
+                        🤖 AI-Generated Content
+                      </div>
+                    <% } %>
                   </div>
                   <hr />
                   <div class="bg-muted/30 rounded-lg p-4 space-y-3 ai-analysis">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center space-x-3">
                         <div class="flex items-center space-x-2">
-                          <span class="text-sm font-medium"
-                            ><%=post.credibility_score%>%</span
-                          >
+                          <!-- Credibility Score Bar -->
+                          <div class="credibility-bar-wrap" style="min-width:140px;">
+                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                              <span class="text-sm font-bold" style="color:<%=post.verdict_color||'#6b7280'%>;"><%=post.credibility_score%>%</span>
+                              <span class="text-xs text-muted-foreground">credible</span>
+                            </div>
+                            <div style="width:140px;height:7px;border-radius:999px;background:#e5e7eb;overflow:hidden;">
+                              <div style="height:100%;width:<%=post.credibility_score%>%;background:<%=post.verdict_color||'#6b7280'%>;border-radius:999px;transition:width 0.6s ease;"></div>
+                            </div>
+                            <div style="font-size:10px;color:#9ca3af;margin-top:3px;">
+                              <% var unverified = 100 - (post.credibility_score||0); %>
+                              <% if(unverified > 0) { %>
+                                <%=unverified%>% of this content has weak or unverified claims
+                              <% } else { %>
+                                Fully supported by evidence
+                              <% } %>
+                            </div>
+                          </div>
                         </div>
                         <div
                           class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent hover:bg-primary/80 bg-credible-high text-white font-medium"
@@ -687,6 +715,20 @@
       </div>
     </div>
     <script>
+      // AI-Generated content filter toggle
+      var aiFilterActive = false;
+      function toggleAiFilter(btn) {
+        aiFilterActive = !aiFilterActive;
+        var label = document.getElementById('ai-btn-label');
+        label.textContent = aiFilterActive ? 'Show AI-Generated' : 'Hide AI-Generated';
+        btn.style.background = aiFilterActive ? 'rgba(139,92,246,0.12)' : '';
+        btn.style.color = aiFilterActive ? '#7c3aed' : '';
+        btn.style.borderColor = aiFilterActive ? 'rgba(139,92,246,0.4)' : '';
+        document.querySelectorAll('.post-card[data-ai="true"]').forEach(function(card) {
+          card.style.display = aiFilterActive ? 'none' : '';
+        });
+      }
+
       window.onload = function () {
         //user label for comments
         var labelArr = Array.from(

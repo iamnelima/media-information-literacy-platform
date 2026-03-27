@@ -1,6 +1,7 @@
 const express = require("express");
 require("dotenv").config();
 const { GoogleGenAI, Type } = require("@google/genai");
+const Groq = require("groq-sdk");
 const router = express.Router();
 const connectionPromise = require("./connection.js");
 const multer = require("multer");
@@ -27,6 +28,20 @@ function getGeminiClient() {
   }
 
   return new GoogleGenAI({ apiKey });
+}
+
+function getGroqClient() {
+  const apiKey = (process.env.GROQ_API_KEY || "")
+    .replace(/^"|"$/g, "")
+    .trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing GROQ_API_KEY. Add a valid Groq API key to the .env file."
+    );
+  }
+
+  return new Groq({ apiKey });
 }
 
 const storage = multer.diskStorage({
@@ -624,6 +639,42 @@ async function ensureVerificationColumns() {
     );
   }
 
+  const [sectorColumn] = await connection.query(
+    "show columns from posts like 'sector'"
+  );
+  if (sectorColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column sector varchar(255) default 'General'"
+    );
+  }
+
+  const [claimCountColumn] = await connection.query(
+    "show columns from posts like 'claim_count'"
+  );
+  if (claimCountColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column claim_count int default 1"
+    );
+  }
+
+  const [createdAtColumn] = await connection.query(
+    "show columns from posts like 'created_at'"
+  );
+  if (createdAtColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column created_at timestamp default current_timestamp"
+    );
+  }
+
+  const [aiGeneratedColumn] = await connection.query(
+    "show columns from posts like 'is_ai_generated'"
+  );
+  if (aiGeneratedColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column is_ai_generated tinyint(1) default 0"
+    );
+  }
+
   verificationColumnsEnsured = true;
 }
 
@@ -797,7 +848,31 @@ router.post("/post", upload.single("image"), (req, res) => {
       throw new Error("No verification response was returned by the model.");
     }
 
-    return normalizeVerificationResult(JSON.parse(response.text), response);
+    const result = normalizeVerificationResult(JSON.parse(response.text), response);
+
+    // Detect AI-generated content with a fast secondary call
+    try {
+      const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? prompt.find(p => p.type === 'text')?.text || '' : '');
+      if (textToCheck.length > 50) {
+        const aiDetectCompletion = await ai.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [{
+            role: "user",
+            content: `Does the following text appear to have been written by an AI or LLM (ChatGPT, Claude, Gemini, etc.)? Look for uniform structure, lack of personal voice, unnaturally polished language, and generic phrasing. Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}`
+          }],
+          response_format: { type: "json_object" }
+        });
+        const aiDetectResult = JSON.parse(aiDetectCompletion.choices[0].message.content);
+        result.is_ai_generated = aiDetectResult.is_ai_generated === true && aiDetectResult.confidence !== 'low';
+      } else {
+        result.is_ai_generated = false;
+      }
+    } catch (aiDetectErr) {
+      console.warn("AI detection failed (non-critical):", aiDetectErr.message);
+      result.is_ai_generated = false;
+    }
+
+    return result;
   }
 
   async function main() {
@@ -875,6 +950,27 @@ router.post("/post", upload.single("image"), (req, res) => {
               var verdictColor = aiResponse.verdict_color;
               var sector = req.body.sector || aiResponse.sector || "General";
               var verificationJson = JSON.stringify(aiResponse);
+              var sector = req.body.sector || aiResponse.sector || "General";
+              if (verdictLabel === "REJECTED_PERSONAL") {
+                console.log("Blocked personal/spam post from " + author);
+                return res.json({
+                  message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
+                  color: "red"
+                });
+              }
+              var claimCount = 1;
+              try {
+                const connection = await connectionPromise;
+                const keywords = textContent.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").filter(w => w.length > 4).slice(0, 5);
+                if (keywords.length > 0) {
+                  const likeClause = keywords.map(() => "text_content LIKE ?").join(" OR ");
+                  const likeValues = keywords.map(w => `%${w}%`);
+                  const [similar] = await connection.query(`SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`, likeValues);
+                  claimCount = (similar[0].cnt || 0) + 1;
+                }
+              } catch (claimErr) {
+                console.warn("Claim count error:", claimErr.message);
+              }
 
               // Guardrail Check: Block Personal/Spam Posts
               if (verdictLabel === "REJECTED_PERSONAL") {
@@ -897,8 +993,8 @@ router.post("/post", upload.single("image"), (req, res) => {
               }
 
               // Add data to database.
-              let dbQuery = "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?);";
-              let dbArray = [postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis, sector, claimCount, verificationJson];
+              let dbQuery = "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?);";
+              let dbArray = [postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis, sector, claimCount, verificationJson, aiResponse.is_ai_generated ? 1 : 0];
               await connection.query(dbQuery, dbArray);
 
               // Auto-delete safety net
@@ -964,7 +1060,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts order by created_at desc limit 20;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database

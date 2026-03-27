@@ -6,9 +6,10 @@ require("dotenv").config();
 
 //Set up the server
 const app = express();
-app.listen(process.env.PORT || 3003, () => {
+const port = process.env.PORT || 3003;
+app.listen(port, () => {
   console.log(
-    "Server running on port 3003 on local host, go to: http://localhost:3003/signin"
+    `Server running on port ${port} on local host, go to: http://localhost:${port}/signin`
   );
 });
 
