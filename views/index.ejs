@@ -219,6 +219,10 @@
                 >
               </div>
               <div class="flex items-center space-x-3">
+                <form action="/search" method="GET" class="relative hidden sm:flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search absolute left-2.5 text-muted-foreground"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                  <input type="text" name="q" placeholder="Search MILES..." class="flex h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
+                </form>
                 <span
                   class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"
                   ><img
@@ -252,6 +256,12 @@
                 href="/myposts"
                 ><svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" class="x14rh7hd"><title>Posts</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2px" d="M3 3H21V21H3z"></path><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2px" d="M9.01486 3 9.01486 21"></path><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2px" d="M14.98514 3 14.98514 21"></path><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2px" d="M21 9.01486 3 9.01486"></path><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2px" d="M21 14.98514 3 14.98514"></path></svg><span class="text-xs">My Posts</span></a
               >
+            </div>
+            <div class="px-4 py-3 sm:hidden border-t border-border/50">
+              <form action="/search" method="GET" class="relative flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search absolute left-2.5 text-muted-foreground"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <input type="text" name="q" placeholder="Search MILES..." class="flex h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
+              </form>
             </div>
           </div>
           <!-- Mobile Sectors Sliding Menu -->
@@ -519,7 +529,7 @@
                           style="scale: 1.5"
                         >
                           <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg
-                        ><span class="text-l">8</span>
+                        ><span id="review-badge-<%=post.post_id%>" class="text-l"><%= post.comments ? post.comments.length : 0 %></span>
                       </button>
                     </div>
                   </div>
@@ -552,7 +562,7 @@
                     </h2>
                   </div>
                   <div class="space-y-4">
-                    <div class="space-y-4">
+                    <div id="comments-list-<%=post.post_id%>" class="space-y-4">
                       <% if(post.comments.length > 0){ %>
                       <%(post.comments).forEach((comment)=>{%>
 
@@ -571,9 +581,17 @@
                               ><%= comment.commenter%></span
                             >
                           </div>
-                          <p class="text-sm text-foreground">
+                          <p class="text-sm text-foreground mb-2">
                             <%= comment.review %>
                           </p>
+                          <button
+                            class="verify-comment-btn inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md text-xs font-medium border border-border/50 transition-colors focus-visible:outline-none hover:bg-muted text-primary h-6 px-2 mt-1"
+                            data-comment="<%= encodeURIComponent(comment.review) %>"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path><path d="m9 12 2 2 4-4"></path></svg>
+                            Verify Credibility
+                          </button>
+                          <div class="comment-verification-result hidden mt-2 p-3 bg-background rounded-md border border-border/50 text-xs text-muted-foreground whitespace-pre-wrap"></div>
                         </div>
                       </div>
 
@@ -595,7 +613,7 @@
                       <div class="flex-1 flex space-x-2">
                         <input
                           type="text"
-                          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                          class="comment-input flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
                           placeholder="Add your review or observation..."
                           value=""
                         /><button
@@ -741,7 +759,7 @@
         });
 
         // sending a comment
-        var inputArr = Array.from(document.getElementsByTagName("input"));
+        var inputArr = Array.from(document.getElementsByClassName("comment-input"));
         var sendArr = Array.from(document.getElementsByClassName("send-btn"));
         var inputCounter = 0;
         var sendMapper = new Map();
@@ -770,8 +788,75 @@
                 .then((Response) => Response.json())
                 .then((data) => {
                   if (data.message == "sent") {
-                    alert("Comment sent, refresh page to view.");
+                    // Update the UI instantly
                     input.value = "";
+                    
+                    let badge = document.getElementById("review-badge-" + postId);
+                    if (badge) {
+                      badge.innerText = parseInt(badge.innerText || "0") + 1;
+                    }
+                    
+                    let list = document.getElementById("comments-list-" + postId);
+                    if (list) {
+                      // Remove the "No comments yet" paragraph if it exists
+                      let p = list.querySelector("p");
+                      if (p && p.innerText.includes("No comments yet")) {
+                        p.remove();
+                      }
+                      
+                      let safeReview = review.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                      let initials = commenter ? commenter[0].toUpperCase() : "U";
+                      
+                      let newHTML = `
+                        <div class="flex space-x-3 p-3 rounded-lg bg-muted/30">
+                          <span class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"><span class="flex h-full w-full items-center justify-center rounded-full bg-primary/10 text-primary text-xs">${initials}</span></span>
+                          <div class="flex-1">
+                            <div class="flex items-center space-x-2 mb-1">
+                              <span class="font-medium text-sm">${commenter}</span>
+                            </div>
+                            <p class="text-sm text-foreground mb-2">${safeReview}</p>
+                            <button class="verify-comment-btn inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md text-xs font-medium border border-border/50 transition-colors focus-visible:outline-none hover:bg-muted text-primary h-6 px-2 mt-1" data-comment="${encodeURIComponent(review)}">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path><path d="m9 12 2 2 4-4"></path></svg>
+                              Verify Credibility
+                            </button>
+                            <div class="comment-verification-result hidden mt-2 p-3 bg-background rounded-md border border-border/50 text-xs text-muted-foreground whitespace-pre-wrap"></div>
+                          </div>
+                        </div>
+                      `;
+                      list.insertAdjacentHTML("beforeend", newHTML);
+                      
+                      // Attach the verify listener to the newly created button
+                      let newBtn = list.lastElementChild.querySelector(".verify-comment-btn");
+                      if (newBtn) {
+                        newBtn.addEventListener('click', function(e) {
+                          e.stopPropagation();
+                          let commentText = decodeURIComponent(this.getAttribute('data-comment'));
+                          let resultDiv = this.nextElementSibling;
+                          this.innerHTML = "Verifying...";
+                          this.disabled = true;
+                          this.classList.add('opacity-50');
+                          
+                          fetch('/verify-comment', {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ comment: commentText })
+                          })
+                          .then(r => r.json())
+                          .then(d => {
+                            this.innerHTML = "Verified";
+                            this.classList.remove('opacity-50');
+                            resultDiv.classList.remove('hidden');
+                            resultDiv.innerHTML = \`<span style="color: \${d.verdict_color}; font-weight: bold;">[\${d.verdict_label}]</span> \${d.explanation}\`;
+                          })
+                          .catch(err => {
+                            this.innerHTML = "Verify Credibility";
+                            this.disabled = false;
+                            this.classList.remove('opacity-50');
+                            alert("Verification failed.");
+                          });
+                        });
+                      }
+                    }
                   } else {
                     alert("Error! Comment not sent");
                   }
@@ -779,6 +864,39 @@
             } else {
               alert("Please provide more content for the comment.");
             }
+          });
+        });
+
+        // Comment Verification
+        const verifyBtns = document.querySelectorAll('.verify-comment-btn');
+        verifyBtns.forEach(btn => {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            let commentText = decodeURIComponent(this.getAttribute('data-comment'));
+            let resultDiv = this.nextElementSibling;
+            
+            this.innerHTML = "Verifying...";
+            this.disabled = true;
+            this.classList.add('opacity-50');
+            
+            fetch('/verify-comment', {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ comment: commentText })
+            })
+            .then(r => r.json())
+            .then(data => {
+              this.innerHTML = "Verified";
+              this.classList.remove('opacity-50');
+              resultDiv.classList.remove('hidden');
+              resultDiv.innerHTML = `<span style="color: ${data.verdict_color}; font-weight: bold;">[${data.verdict_label}]</span> ${data.explanation}`;
+            })
+            .catch(err => {
+              this.innerHTML = "Verify Credibility";
+              this.disabled = false;
+              this.classList.remove('opacity-50');
+              alert("Verification failed.");
+            });
           });
         });
 

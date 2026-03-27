@@ -445,17 +445,39 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: evidenceResponseStructure,
-        },
-      });
+      let isMultimodal = Array.isArray(prompt);
+      let modelToUse = isMultimodal ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile";
+      
+      let promptWithJsonInstruction = typeof prompt === 'string' 
+        ? prompt + "\n\nYou MUST output a valid JSON object matching the requested schema."
+        : prompt;
+
+      let requestConfig = {
+        messages: [{ role: "user", content: promptWithJsonInstruction }],
+        model: modelToUse,
+      };
+
+      if (!isMultimodal) {
+        requestConfig.response_format = { type: "json_object" };
+      }
+      
+      const completion = await ai.chat.completions.create(requestConfig);
+      
+      let contentString = completion.choices[0].message.content;
+      if (contentString.includes("\`\`\`json")) {
+        contentString = contentString.split("\`\`\`json")[1].split("\`\`\`")[0].trim();
+      } else if (contentString.includes("\`\`\`")) {
+        contentString = contentString.split("\`\`\`")[1].split("\`\`\`")[0].trim();
+      }
+
+      return {
+        text: contentString,
+        candidates: []
+      };
     } catch (error) {
       lastError = error;
-      if (!isRetryableVerificationError(error) || attempt === maxAttempts) {
+      const status = error?.status;
+      if (attempt === maxAttempts || (status !== 429 && status !== 500 && status !== 503)) {
         throw error;
       }
 
@@ -612,11 +634,12 @@ function generateHash(data) {
 }
 
 async function fileToGenerativePart(path, mimeType) {
+  const base64Str = fs.readFileSync(path, { encoding: "base64" });
   return {
-    inlineData: {
-      data: fs.readFileSync(path, { encoding: "base64" }),
-      mimeType,
-    },
+    type: "image_url",
+    image_url: {
+      url: `data:${mimeType};base64,${base64Str}`
+    }
   };
 }
 
@@ -651,16 +674,18 @@ wss.on("connection", async function (ws) {
     }
 
     const prompt = message.promptToSend;
-    const chatbot = getGeminiClient();
-    const response = await chatbot.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: milesPersona + prompt,
-    });
+    const chatbot = getGroqClient();
+    try {
+      const completion = await chatbot.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "system", content: milesPersona }, { role: "user", content: prompt }],
+      });
 
-    if (response.text) {
-      ws.send(response.text);
-    } else {
-      ws.send(response.promptFeedback);
+      if (completion.choices[0].message.content) {
+        ws.send(completion.choices[0].message.content);
+      }
+    } catch (e) {
+      ws.send("I'm currently unable to respond. Please try again later.");
     }
   });
 
@@ -713,13 +738,14 @@ router.get("/post", (req, res) => {
 
 router.post("/post", upload.single("image"), (req, res) => {
   async function imageEval(prompt, fileName) {
-    const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+    const ai = getGroqClient();
+    const completion = await ai.chat.completions.create({
+      model: "llama-3.2-11b-vision-preview",
+      messages: [{ role: "user", content: prompt }],
     });
 
-    if (response.text) {
+    if (completion.choices[0].message.content) {
+      let responseText = completion.choices[0].message.content;
       let source = path.join(__dirname, "../eval", "images", fileName);
       let destination = path.join(__dirname, "../public", "posts", fileName);
       await fs.copyFile(source, destination, (err) => {
@@ -739,7 +765,7 @@ router.post("/post", upload.single("image"), (req, res) => {
         console.log("Sucessfully deleted image from evaluation.");
       });
 
-      let output = [fileName, response.text];
+      let output = [fileName, responseText];
       console.log("Evaluation success!");
 
       return output;
@@ -763,7 +789,7 @@ router.post("/post", upload.single("image"), (req, res) => {
   }
 
   async function checkCredibility(prompt, useGrounding) {
-    const ai = getGeminiClient();
+    const ai = getGroqClient();
     const response = await generateVerificationResponse(ai, prompt);
 
     if (!response.text) {
@@ -814,7 +840,10 @@ router.post("/post", upload.single("image"), (req, res) => {
                 imagePassedToAi = image;
 
                 console.log("Evaluating image");
-                var multimodalPrompt = [image, { text: imageEvalPrompt }];
+                var multimodalPrompt = [
+                  { type: "text", text: imageEvalPrompt },
+                  imagePassedToAi
+                ];
                 var output = await imageEval(multimodalPrompt, targetFile);
                 if (!Array.isArray(output)) return;
                 dbImagePath = "posts/" + output[0];
@@ -830,7 +859,10 @@ router.post("/post", upload.single("image"), (req, res) => {
               let aiPrompt = buildVerificationPrompt(content, useGrounding);
 
               if (imagePassedToAi) {
-                multimodalPrompt = [imagePassedToAi, { text: aiPrompt }];
+                multimodalPrompt = [
+                  { type: "text", text: aiPrompt },
+                  imagePassedToAi
+                ];
               } else {
                 multimodalPrompt = aiPrompt;
               }
@@ -964,6 +996,51 @@ router.get("/", (req, res) => {
   }
 });
 
+// Search page
+router.get("/search", (req, res) => {
+  const searchQuery = req.query.q || "";
+
+  async function main() {
+    await ensureVerificationColumns();
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where text_content like ? or author like ? order by created_at desc limit 30;",
+      [`%${searchQuery}%`, `%${searchQuery}%`]
+    );
+
+    //Fetch comments/reviews from database
+    var [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments"
+    );
+
+    //Add a comment element for each post
+    posts.forEach((post) => {
+      post.comments = [];
+      post.verification = parseStoredVerification(post.verification_json);
+    });
+
+    comments.forEach((comment) => {
+      posts.forEach((post) => {
+        if (comment.post_id == post.post_id) {
+          post.comments.push(comment);
+        }
+      });
+    });
+
+    res.render("index", { 
+      posts, 
+      pageTitle: `Search Results for "${searchQuery}"`, 
+      currentSector: null,
+      searchQuery
+    });
+  }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
+});
+
 // Sector pages
 router.get("/sectors/:sectorName", (req, res) => {
   let sectorName = req.params.sectorName;
@@ -1081,6 +1158,45 @@ router.post("/comments", (req, res) => {
     main();
   } else {
     res.render("401");
+  }
+});
+
+// Verify Comment endpoint
+router.post("/verify-comment", async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { comment } = req.body;
+  if (!comment || comment.trim() === "") {
+    return res.status(400).json({ error: "No comment provided" });
+  }
+
+  try {
+    const ai = getGroqClient();
+    const promptText = `You are a fact-checking assistant for MILES. Evaluate the following user comment for credibility.
+Return evaluate credibility on a 0-100 scale. Provide a label, color, and explanation. If the comment is purely an opinion or greeting, label it as "Opinion/Unverifiable" and color it "gray".
+
+You MUST output a valid JSON object with the following keys EXACTLY:
+"credibility_score" (number), "verdict_label" (string), "verdict_color" (string), "explanation" (string).
+
+Comment: "${comment}"`;
+
+    const completion = await ai.chat.completions.create({
+      messages: [{ role: "user", content: promptText }],
+      model: "llama-3.3-70b-versatile",
+      response_format: { type: "json_object" }
+    });
+
+    const result = JSON.parse(completion.choices[0].message.content);
+    res.json(result);
+  } catch (error) {
+    console.error("Comment verification error:", error);
+    res.status(500).json({ 
+      verdict_label: "Verification Failed", 
+      verdict_color: "red", 
+      explanation: "Could not verify this comment at the moment due to an AI error or rate limit."
+    });
   }
 });
 

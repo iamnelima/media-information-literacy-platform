@@ -16,17 +16,17 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const mysql = require("mysql2/promise");
-const { GoogleGenAI, Type } = require("@google/genai");
+const Groq = require("groq-sdk");
 
 const NEWS_API_KEY = process.env.NEWS_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 if (!NEWS_API_KEY) {
   console.error("❌  NEWS_API_KEY is missing in .env");
   process.exit(1);
 }
-if (!GEMINI_API_KEY) {
-  console.error("❌  GEMINI_API_KEY is missing in .env");
+if (!GROQ_API_KEY) {
+  console.error("❌  GROQ_API_KEY is missing in .env");
   process.exit(1);
 }
 
@@ -38,32 +38,23 @@ const db = mysql.createPool({
   database: process.env.DATABASE || "miles_school",
 });
 
-// ───── Gemini ────────────────────────────────────────────────────────────────
-const ai = new GoogleGenAI({});
-
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    credibilityScore: { type: Type.INTEGER },
-    verdict_label: { type: Type.STRING },
-    verdict_color: { type: Type.STRING },
-    explanation: { type: Type.STRING },
-    date_of_check: { type: Type.STRING },
-    sector: { type: Type.STRING },
-  },
-};
+// ───── Groq ────────────────────────────────────────────────────────────────
+const ai = new Groq({ apiKey: GROQ_API_KEY });
 
 const credibilityPrompt = `
 You are a fact-checking agent for MILES (Media & Information Literacy Engagement System).
 Given a news article headline and description, evaluate its credibility.
 
 Rules:
-- credibilityScore: 0–100
+- credibility_score: 0–100
 - verdict_label: "Highly Credible" (>=70) | "Somewhat Credible" (60-69) | "Low Credibility" (50-59) | "Not Credible" (<50)
 - verdict_color: "green" | "yellow" | "orange" | "red" (matching the label)
 - explanation: 1–3 sentence summary of your reasoning
 - date_of_check: today's date YYYY-MM-DD format
 - sector: One of Politics | Health | Tech | Agriculture | Entertainment | Business | Science | General
+
+You MUST output a valid JSON object matching the following keys exactly:
+"credibilityScore" (number), "verdict_label" (string), "verdict_color" (string), "explanation" (string), "date_of_check" (string), "sector" (string).
 
 News Article:
 `;
@@ -207,20 +198,17 @@ async function seedSector({ sector, category, count }) {
       }
     }
 
-    // ── Gemini credibility analysis ──
+    // ── Groq credibility analysis ──
     let aiResult;
     try {
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: credibilityPrompt + text,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema,
-        },
+      const response = await ai.chat.completions.create({
+        messages: [{ role: "user", content: credibilityPrompt + text }],
+        model: "llama-3.3-70b-versatile",
+        response_format: { type: "json_object" }
       });
-      aiResult = JSON.parse(response.text);
+      aiResult = JSON.parse(response.choices[0].message.content);
     } catch (aiErr) {
-      console.warn(`   ⚠️  Gemini error: ${aiErr.message} — using defaults`);
+      console.warn(`   ⚠️  Groq error: ${aiErr.message} — using defaults`);
       aiResult = {
         credibilityScore: 65,
         verdict_label: "Somewhat Credible",
@@ -260,8 +248,8 @@ async function seedSector({ sector, category, count }) {
       }
     }
 
-    // Delay to stay within 15 RPM free-tier limit
-    await new Promise((r) => setTimeout(r, 5000));
+    // Brief delay for Groq
+    await new Promise((r) => setTimeout(r, 500));
   }
 }
 
