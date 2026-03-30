@@ -156,7 +156,8 @@ You are an evidence-first fact-checking agent for **MILES (Media & Information L
   * 60–69 → "Somewhat Credible" (yellow)
   * 50–59 → "Low Credibility" (orange)
   * < 50 → "Not Credible" (red)
-* Compute credibility_score by combining: claim-level evidence weights, source reliabilities, recency, and image manipulation likelihood (if image relevant). Document the weighting formula briefly.
+  * 0 → Set to exactly 0 if a central claim is verifiably false, objectively wrong, or completely debunked by solid evidence.
+* Compute credibility_score by combining: claim-level evidence weights, source reliabilities, recency, and image manipulation likelihood (if image relevant). Document the weighting formula briefly. Provide a "score_breakdown" string explicitly explaining why X% is true and why the remaining Y% is unverified/false.
 
 **OUTPUT FORMAT (JAVASCRIPT OBJECT):**
 
@@ -248,6 +249,10 @@ const responseStructure = {
       type: Type.INTEGER,
       description: "Overall credibility score from 0 to 100",
     },
+    score_breakdown: {
+      type: Type.STRING,
+      description: "A short 1-2 sentence explanation breaking down the meaning of the score (e.g., '30% because the name is real, but the remaining 70% is completely fabricated').",
+    },
     verdict_label: {
       type: Type.STRING,
       description:
@@ -288,8 +293,9 @@ Scoring rules:
 - 60 to 69 = Somewhat Credible, yellow
 - 50 to 59 = Low Credibility, orange
 - Below 50 = Not Credible, red
+- 0 = Set to exactly 0 if the main claim is verifiably false, a hoax, or totally debunked.
 
-Return valid JSON only. Keep explanations concise and evidence-based.
+Return valid JSON only. Keep explanations concise and evidence-based. Include a "score_breakdown" string that explains exactly why the score is X% and what the remaining portion means.
 
 For key_claims:
 - Extract up to 3 important factual claims.
@@ -319,6 +325,10 @@ const evidenceResponseStructure = {
     credibilityScore: {
       type: Type.INTEGER,
       description: "Overall credibility score from 0 to 100",
+    },
+    score_breakdown: {
+      type: Type.STRING,
+      description: "A short 1-2 sentence explanation breaking down the meaning of the score (e.g., '30% because the name is real, but the remaining 70% is completely fabricated').",
     },
     verdict_label: {
       type: Type.STRING,
@@ -608,6 +618,7 @@ function normalizeVerificationResult(aiResponse, response) {
       (sources.length > 0
         ? "Grounded web verification with claim decomposition."
         : "Model-only verification with no grounded sources returned."),
+    score_breakdown: aiResponse?.score_breakdown || null,
     key_claims: safeArray(aiResponse?.key_claims).slice(0, 3),
     supporting_evidence: safeArray(aiResponse?.supporting_evidence).slice(0, 3),
     contradicting_evidence: safeArray(aiResponse?.contradicting_evidence).slice(
@@ -1092,6 +1103,40 @@ router.get("/", (req, res) => {
   }
 });
 
+// Single post detail page
+router.get("/posts/:id", (req, res) => {
+  if (!req.session.user) return res.render("401");
+
+  async function main() {
+    await ensureVerificationColumns();
+    const connection = await connectionPromise;
+    const postId = req.params.id;
+
+    const [rows] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where post_id = ? limit 1;",
+      [postId]
+    );
+
+    if (!rows.length) return res.status(404).render("404");
+
+    const post = rows[0];
+    post.verification = parseStoredVerification(post.verification_json);
+
+    const [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments where post_id = ? order by comment_id asc",
+      [postId]
+    );
+    post.comments = comments;
+
+    res.render("post-detail", { post });
+  }
+
+  main().catch((err) => {
+    console.error("Post detail error:", err);
+    if (!res.headersSent) res.status(500).send("Server error");
+  });
+});
+
 // Search page
 router.get("/search", (req, res) => {
   const searchQuery = req.query.q || "";
@@ -1100,7 +1145,7 @@ router.get("/search", (req, res) => {
     await ensureVerificationColumns();
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where text_content like ? or author like ? order by created_at desc limit 30;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where text_content like ? or author like ? order by created_at desc limit 30;",
       [`%${searchQuery}%`, `%${searchQuery}%`]
     );
 
@@ -1147,7 +1192,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Fetch posts from database for this specific sector
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
       [sectorName]
     );
 
@@ -1159,6 +1204,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Add a comment element for each post
     posts.forEach((post) => {
       post.comments = [];
+      post.verification = parseStoredVerification(post.verification_json);
     });
 
     postsCounter = 0;
@@ -1188,7 +1234,7 @@ router.get("/myposts", (req, res) => {
 
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json from posts where author = ? order by created_at desc limit 10;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where author = ? order by created_at desc limit 10;",
       [user]
     );
 
