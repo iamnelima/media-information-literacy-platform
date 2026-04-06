@@ -351,6 +351,14 @@
       ]);
 
       const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/;
+      const ALLOWED_PUBLIC_DOMAINS = new Set([
+        "gmail.com",
+        "yahoo.com",
+        "outlook.com",
+        "hotmail.com",
+        "icloud.com",
+        "protonmail.com",
+      ]);
 
       const RULES = [
         { id: "rule-length",  regex: /.{12,}/,       label: "At least 12 characters"   },
@@ -364,11 +372,19 @@
 
       function validateEmail(email) {
         const trimmed = email.trim().toLowerCase();
+      
         if (!EMAIL_REGEX.test(trimmed)) return "Please enter a valid email address.";
+      
         const domain = trimmed.split("@")[1];
-        if (DISPOSABLE_DOMAINS.has(domain)) return "Disposable email addresses are not allowed.";
+      
+        if (DISPOSABLE_DOMAINS.has(domain)) return "Please enter a valid email address.";
+        if (!ALLOWED_PUBLIC_DOMAINS.has(domain) && !domain.endsWith(".ac.ke")) {
+          return "Please enter a valid email.";
+        }
+      
         return null;
       }
+      
 
       function showMessage(text, color) {
         const el = document.getElementById("user-message");
