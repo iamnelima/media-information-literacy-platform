@@ -414,10 +414,10 @@
                     </p>
                   </div>
                   <div class="space-y-4">
-                    <label
+                    <label>
                       class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >Add Image (Optional)</label
-                    >
+                      >Add Image or Video (Optional)</label>
+                     <video id="video-preview" controls style="display:none; max-width:100%; margin-top:10px; border-radius:8px;"></video>
                     <p
                       id="user-message"
                       class="text-l text-muted-foreground"
@@ -434,7 +434,7 @@
                       <input
                         type="file"
                         class="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm hidden"
-                        accept="image/*"
+                        ="image/*,video/*"
                         id="image-upload"
                       /><label
                         id="image-label"
@@ -464,11 +464,11 @@
                         </div>
                         <div class="space-y-1">
                           <p class="text-sm font-medium">
-                            Click to upload image
-                          </p>
-                          <p class="text-xs text-muted-foreground">
-                            PNG, JPG up to 10MB
-                          </p>
+                            Click to upload image or video
+                         </p>
+                         <p class="text-xs text-muted-foreground">
+                           PNG, JPG up to 10MB · MP4, MOV up to 50MB
+                         </p>
                         </div></label
                       >
                     </div>
@@ -686,40 +686,55 @@
         var imageLabel = document.getElementById("image-label");
         userMessage.style.color = "red";
         var imageFile = null;
-        imageUpload.addEventListener("change", function (e) {
+          imageUpload.addEventListener("change", function (e) {
           let files = e.target.files;
           let file = files[0];
           imageFile = file;
-          let size = file.size;
-          if (size > 10000000) {
-            userMessage.innerText = "File must be 10MBs max";
-          } else {
-            const reader = new FileReader();
-            imageLabel.style.opacity = 0.4;
-            userMessage.innerText = "Click the image to change it";
-            userMessage.style.color = "blue";
-            reader.readAsDataURL(file);
-            reader.onload = function (event) {
-              let holder = document.getElementById("holder");
-              holder.style.background = `url(${event.target.result})`;
-            };
-          }
-        });
+          let isVideo = file.type.startsWith("video/");
+          let maxSize = isVideo ? 50000000 : 10000000;
+          let label = isVideo ? "video" : "image";
+    let maxLabel = isVideo ? "50MBs" : "10MBs";
+
+    if (file.size > maxSize) {
+      userMessage.innerText = `File must be ${maxLabel} max`;
+    } else {
+      imageLabel.style.opacity = 0.4;
+      userMessage.innerText = `Click the ${label} to change it`;
+      userMessage.style.color = "blue";
+
+      let holder = document.getElementById("holder");
+      let videoPreview = document.getElementById("video-preview");
+
+      if (isVideo) {
+        holder.style.background = "";
+        videoPreview.style.display = "block";
+        videoPreview.src = URL.createObjectURL(file);
+      } else {
+        videoPreview.style.display = "none";
+        videoPreview.src = "";
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = function (event) {
+          holder.style.background = `url(${event.target.result})`;
+        };
+      }
+    }
+  });
 
         // Post content, send to backend
         var postBtn = document.getElementById("post-btn");
         var errorMessage = document.getElementById("error-message");
         postBtn.addEventListener("click", function (e) {
           e.preventDefault();
-          if (textarea.value.trim() == "") {
-            errorMessage.innerText = "Please provide some text for context.";
+          if (textarea.value.trim() == "" && !imageFile) {
+            errorMessage.innerText = "Please provide text or upload an image/video.";
             setTimeout(function () {
               errorMessage.innerText = "";
             }, 3003);
             return;
           } else {
             let uploadData = new FormData();
-            uploadData.append("image", imageFile);
+            uploadData.append("media", imageFile);
             uploadData.append("content", textarea.value);
             if (sectorParam) {
               uploadData.append("sector", sectorParam);

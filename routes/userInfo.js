@@ -45,8 +45,8 @@ function getGroqClient() {
 }
 
 const storage = multer.diskStorage({
-  limits: {
-    fileSize: 20 * 1024 * 1024, // 20 Megabytes in bytes
+   limits: {
+   fileSize: 50 * 1024 * 1024, // 50 Megabytes for videos
     files: 5, // Max 5 files
     fieldSize: 10 * 1024 * 1024,
   },
@@ -54,25 +54,15 @@ const storage = multer.diskStorage({
     ensureUploadDirectories();
     cb(null, path.join(__dirname, "../eval", "images"));
   },
-  filename: (req, file, cb) => {
-    async function assignName(r) {
-      try {
-        let request = await r;
-        let content = request.body.content;
-        let contentHash = generateHash(content);
-        contentHash = contentHash.substring(43, 63);
-        let ext = file.mimetype.split("/")[1];
-        let name = contentHash;
-        return cb(null, name + "." + ext);
-      } catch (e) {
-        console.error("Error while naming file: " + e.code + "\n" + e);
-        return JSON.stringify({
-          message: "Error occured while uploading image, please try again",
-          color: "orange",
-        });
-      }
+   filename: (req, file, cb) => {
+    try {
+      let ext = file.mimetype.split("/")[1];
+      let randomName = require("crypto").randomBytes(16).toString("hex");
+      return cb(null, randomName + "." + ext);
+    } catch (e) {
+      console.error("Error while naming file: " + e.code + "\n" + e);
+      return cb(e);
     }
-    assignName(req);
   },
 });
 const upload = multer({ storage });
@@ -100,6 +90,14 @@ const imageEvalPrompt =
   "confidence: A percentage score (0–100) of how confident you are." +
   'Always be strict when detecting nudity or inappropriacy. If unsure, lean toward "DECLINED".' +
   'If the image is declined, suggest a general reason (e.g., "Contains nudity", "Hate symbol detected").';
+
+const aiVideoDetectionPrompt =
+  "You are an AI media forensics agent for MILES. Analyze the following video and determine if it is AI-generated or synthetically created." +
+  "Look for signs such as: unnatural motion, inconsistent lighting, morphing faces, unrealistic textures, deepfake artifacts, or any other indicators of AI generation." +
+  "Return a JAVASCRIPT OBJECT with:" +
+  'decision: "AI_GENERATED" or "AUTHENTIC".' +
+  "confidence: A percentage score (0-100) of how confident you are." +
+  "reason: A short explanation of what signals led to this decision.";
 
 //Prompt for credibility check
 var credibilityPrompt = `
@@ -669,7 +667,7 @@ async function ensureVerificationColumns() {
     );
   }
 
-  const [createdAtColumn] = await connection.query(
+const [createdAtColumn] = await connection.query(
     "show columns from posts like 'created_at'"
   );
   if (createdAtColumn.length === 0) {
@@ -684,6 +682,15 @@ async function ensureVerificationColumns() {
   if (aiGeneratedColumn.length === 0) {
     await connection.query(
       "alter table posts add column is_ai_generated tinyint(1) default 0"
+    );
+  }
+
+  const [aiVideoFlagColumn] = await connection.query(
+    "show columns from posts like 'ai_video_flag'"
+  );
+  if (aiVideoFlagColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column ai_video_flag text null"
     );
   }
 
@@ -841,9 +848,8 @@ router.get("/post", (req, res) => {
     res.render("401");
   }
 });
-
-router.post("/post", upload.single("image"), (req, res) => {
-  async function imageEval(imagePart, fileName) {
+router.post("/post", upload.single("media"), (req, res) => {
+  async function imageEval(prompt, fileName) {
     const ai = getGeminiClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -956,32 +962,95 @@ router.post("/post", upload.single("image"), (req, res) => {
             });
           } else {
             try {
-              let content = await req.body.content;
-              let hash = generateHash(content);
+           let content = req.body.content && req.body.content.trim() !== ""
+              ? req.body.content
+              : "";
               let targetFile = "";
-              hash = hash.substring(43, 63);
-              files.forEach((file) => {
-                let name = file.split(".")[0];
-                if (name == hash) {
-                  targetFile = file;
-                }
-              });
+              // Match uploaded file by req.file if available
+              if (req.file && req.file.filename) {
+                targetFile = req.file.filename;
+              } else {
+                // fallback: hash match for legacy
+                let hash = generateHash(content);
+                hash = hash.substring(43, 63);
+                files.forEach((file) => {
+                  let name = file.split(".")[0];
+                  if (name == hash) {
+                    targetFile = file;
+                  }
+                });
+              }
 
               var imagePath = "";
               var ext = "";
               var dbImagePath = null;
               var imagePassedToAi = null;
-              if (targetFile.trim() != "") {
-                imagePath = path.join(__dirname, "../eval", "images", targetFile);
-                ext = targetFile.split(".")[1];
-                const imageMimeType = "image/" + ext;
-                const image = await fileToGenerativePart(imagePath, imageMimeType);
-                imagePassedToAi = image;
+              var aiVideoFlag = null;
 
-                console.log("Evaluating image");
-                var output = await imageEval(imagePassedToAi, targetFile);
-                if (!Array.isArray(output)) return;
-                dbImagePath = "posts/" + output[0];
+               if (targetFile.trim() != "") {
+                imagePath = path.join(
+                  __dirname,
+                  "../eval",
+                  "images",
+                  targetFile
+                );
+                ext = targetFile.split(".")[1];
+                const isVideo = req.file?.mimetype?.startsWith("video/");
+                if (isVideo) {
+                  let source = path.join(__dirname, "../eval", "images", targetFile);
+                  let destination = path.join(__dirname, "../public", "posts", targetFile);
+                  fs.copyFileSync(source, destination);
+                  fs.unlinkSync(source);
+                  dbImagePath = "posts/" + targetFile;
+                  imagePassedToAi = null;
+                  console.log("Video saved, running AI detection");
+
+                 // AI video analysis + AI detection
+                  try {
+                    const videoMime = req.file?.mimetype || "video/mp4";
+                    const videoPart = await fileToGenerativePart(destination, videoMime);
+                    const aiDetectClient = getGeminiClient();
+
+                    // If no text provided, generate description from video
+                    if (!req.body.content || req.body.content.trim() === "") {
+                      const descResponse = await aiDetectClient.models.generateContent({
+                        model: "gemini-2.5-flash",
+                        contents: [videoPart, { text: "Watch this video carefully and describe what is happening in detail. Identify any claims, information, news, or notable content present. Be factual and concise." }],
+                      });
+                      if (descResponse.text) {
+                        content = descResponse.text.trim();
+                      }
+                    }
+
+                    // AI-generated video detection
+                    const aiDetectResponse = await aiDetectClient.models.generateContent({
+                      model: "gemini-2.5-flash",
+                      contents: [videoPart, { text: aiVideoDetectionPrompt }],
+                    });
+                    if (aiDetectResponse.text) {
+                      try {
+                        const cleaned = aiDetectResponse.text.replace(/```json|```/g, "").trim();
+                        const parsed = JSON.parse(cleaned);
+                        aiVideoFlag = parsed.decision === "AI_GENERATED" ? `⚠️ This video may be AI-generated (${parsed.confidence}% confidence). ${parsed.reason}` : null;
+                      } catch(e) {
+                        aiVideoFlag = null;
+                      }
+                    }
+                  } catch(e) {
+                    console.warn("AI video detection failed:", e.message);
+                    aiVideoFlag = null;
+                  }
+                } else {
+                  const mediaMimeType = req.file?.mimetype || "image/" + ext;
+                  const media = await fileToGenerativePart(imagePath, mediaMimeType);
+                  imagePassedToAi = media;
+                  console.log("Evaluating image");
+                  var multimodalPrompt = [media, { text: imageEvalPrompt }];
+                  var output = await imageEval(multimodalPrompt, targetFile);
+                  if (!Array.isArray(output)) return;
+                  dbImagePath = "posts/" + output[0];
+                  console.log("Out of image evaluation function");
+                }
               }
 
               var postId = generateHash(content);
@@ -1043,18 +1112,24 @@ router.post("/post", upload.single("image"), (req, res) => {
 
               const connection = await connectionPromise;
 
-              // Claim Detection: Count similar posts
-              var claimCount = 1;
-              const keywords = textContent.replace(/[^a-zA-Z0-9 ]/g, '').split(' ').filter(w => w.length > 4).slice(0, 5);
-              if (keywords.length > 0) {
-                const likeClause = keywords.map(() => 'text_content LIKE ?').join(' OR ');
-                const [similar] = await connection.query(`SELECT COUNT(*) as cnt FROM posts WHERE ${likeClause}`, keywords.map(w => `%${w}%`));
-                claimCount = (similar[0].cnt || 0) + 1;
-              }
-
               // Add data to database.
-              let dbQuery = "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?);";
-              let dbArray = [postId, author, imageLocation, textContent, credScore, dateOfCheck, verdictLabel, verdictColor, aiAnalysis, sector, claimCount, verificationJson, aiResponse.is_ai_generated ? 1 : 0];
+              let dbQuery = "insert into posts(post_id, author, image_location, text_content, credibility_score, date_of_check, verdict_label, verdict_color, ai_analysis, sector, claim_count, verification_json, is_ai_generated, ai_video_flag, created_at) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW());";
+              let dbArray = [
+                postId,
+                author,
+                imageLocation,
+                textContent,
+                credScore,
+                dateOfCheck,
+                verdictLabel,
+                verdictColor,
+                aiAnalysis,
+                sector,
+                claimCount,
+                verificationJson,
+                aiResponse.is_ai_generated ? 1 : 0,
+                aiVideoFlag
+              ];
               await connection.query(dbQuery, dbArray);
 
               // Auto-delete safety net
@@ -1120,7 +1195,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts order by created_at desc limit 20;"
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at, is_ai_generated, ai_video_flag from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -1267,7 +1342,7 @@ router.get("/sectors/:sectorName", (req, res) => {
 
     res.render("index", { posts, pageTitle: sectorName + " Sector", currentSector: sectorName });
   }
-  
+
   if (req.session.user) {
     main();
   } else {
