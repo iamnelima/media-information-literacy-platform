@@ -223,12 +223,27 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search absolute left-2.5 text-muted-foreground"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
                   <input type="text" name="q" placeholder="Search MILES..." class="flex h-9 w-full rounded-md border border-input bg-background pl-9 pr-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>">
                 </form>
-                <span
-                  class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"
-                  ><img
-                    class="aspect-square h-full w-full"
-                    src="/images/smiley.webp"
-                /></span>
+                <div class="relative" id="nav-avatar-wrap">
+                  <button id="nav-avatar-btn" onclick="(function(){document.getElementById('nav-avatar-dropdown').classList.toggle('hidden');event.stopPropagation();})()" style="background:none;border:none;padding:0;cursor:pointer;">
+                    <span class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8 border-2 border-primary/40 hover:border-primary transition-all duration-200" style="display:block;">
+                      <img id="nav-avatar-img" class="aspect-square h-full w-full object-cover" src="/images/smiley.webp" alt="Profile" />
+                    </span>
+                  </button>
+                  <div id="nav-avatar-dropdown" class="hidden absolute right-0 top-full mt-2 w-44 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden" style="min-width:170px;">
+                    <div class="px-4 py-3 border-b border-border/50">
+                      <p class="text-xs text-muted-foreground">Signed in as</p>
+                      <p id="nav-user-email" class="text-xs font-semibold truncate text-foreground"></p>
+                    </div>
+                    <a href="/profile" class="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      View Profile
+                    </a>
+                    <button onclick="milesLogout()" class="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors border-t border-border/50">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                      Log Out
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -741,6 +756,37 @@
           });
         });
       };
+
+      // ── Avatar dropdown: close on outside click ───────────────
+      document.addEventListener('click', function(e) {
+        var dd  = document.getElementById('nav-avatar-dropdown');
+        var btn = document.getElementById('nav-avatar-btn');
+        if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
+          dd.classList.add('hidden');
+        }
+      });
+
+      // ── Load avatar + email from session ─────────────────────
+      (function() {
+        var email = sessionStorage.getItem('user') || '';
+        var emailEl = document.getElementById('nav-user-email');
+        if (emailEl && email) emailEl.textContent = email;
+
+        var savedPic = sessionStorage.getItem('profile_picture');
+        var avatarImg = document.getElementById('nav-avatar-img');
+        if (avatarImg && savedPic) avatarImg.src = '/' + savedPic;
+      })();
+
+      // ── Logout function ──────────────────────────────────────
+      function milesLogout() {
+        var sure = confirm('Are you sure you want to log out?');
+        if (sure) {
+          sessionStorage.clear();
+          fetch('/profile', { method: 'POST' }).then(function() {
+            window.location.href = '/signin';
+          });
+        }
+      }
     </script>
   </body>
 </html>

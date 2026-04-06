@@ -471,33 +471,34 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       let isMultimodal = Array.isArray(prompt);
-      let modelToUse = isMultimodal ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile";
-      
-      let promptWithJsonInstruction = typeof prompt === 'string' 
-        ? prompt + "\n\nYou MUST output a valid JSON object matching the requested schema."
-        : prompt;
+      let contents;
 
-      let requestConfig = {
-        messages: [{ role: "user", content: promptWithJsonInstruction }],
-        model: modelToUse,
-      };
+      if (isMultimodal) {
+        // Build multimodal content array for Gemini
+        const parts = prompt.map((p) => {
+          if (p.inlineData) return p; // image part
+          if (typeof p === 'string') return { text: p };
+          if (p.text) return { text: p.text };
+          return p;
+        });
+        contents = [{ role: "user", parts }];
+      } else {
+        contents = [{ role: "user", parts: [{ text: prompt }] }];
+      }
 
-      if (!isMultimodal) {
-        requestConfig.response_format = { type: "json_object" };
-      }
-      
-      const completion = await ai.chat.completions.create(requestConfig);
-      
-      let contentString = completion.choices[0].message.content;
-      if (contentString.includes("\`\`\`json")) {
-        contentString = contentString.split("\`\`\`json")[1].split("\`\`\`")[0].trim();
-      } else if (contentString.includes("\`\`\`")) {
-        contentString = contentString.split("\`\`\`")[1].split("\`\`\`")[0].trim();
-      }
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: evidenceResponseStructure,
+          temperature: 0.3,
+        }
+      });
 
       return {
-        text: contentString,
-        candidates: []
+        text: response.text,
+        candidates: response.candidates || []
       };
     } catch (error) {
       lastError = error;
@@ -695,12 +696,12 @@ function generateHash(data) {
   return hash;
 }
 
-async function fileToGenerativePart(path, mimeType) {
-  const base64Str = fs.readFileSync(path, { encoding: "base64" });
+async function fileToGenerativePart(filePath, mimeType) {
+  const base64Str = fs.readFileSync(filePath, { encoding: "base64" });
   return {
-    type: "image_url",
-    image_url: {
-      url: `data:${mimeType};base64,${base64Str}`
+    inlineData: {
+      data: base64Str,
+      mimeType
     }
   };
 }
@@ -736,17 +737,19 @@ wss.on("connection", async function (ws) {
     }
 
     const prompt = message.promptToSend;
-    const chatbot = getGroqClient();
+    const chatbot = getGeminiClient();
     try {
-      const completion = await chatbot.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: milesPersona }, { role: "user", content: prompt }],
+      const completion = await chatbot.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { systemInstruction: milesPersona }
       });
 
-      if (completion.choices[0].message.content) {
-        ws.send(completion.choices[0].message.content);
+      if (completion.text) {
+        ws.send(completion.text);
       }
     } catch (e) {
+      console.error("Chatbot error:", e);
       ws.send("I'm currently unable to respond. Please try again later.");
     }
   });
@@ -754,6 +757,47 @@ wss.on("connection", async function (ws) {
   ws.on("close", function () {
     console.log("Client Disconnected");
   });
+});
+
+// Ensure profile_picture column exists
+async function ensureProfilePictureColumn() {
+  const connection = await connectionPromise;
+  const [col] = await connection.query("SHOW COLUMNS FROM users LIKE 'profile_picture'");
+  if (col.length === 0) {
+    await connection.query("ALTER TABLE users ADD COLUMN profile_picture varchar(500) DEFAULT NULL");
+    console.log("Added profile_picture column to users table.");
+  }
+}
+ensureProfilePictureColumn().catch(console.error);
+
+// Multer storage for profile pictures
+const profilePicStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, "../public", "profile-pics");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = file.mimetype.split("/")[1];
+    const unique = `${req.session.user.email.replace(/[^a-z0-9]/gi, "_")}_${Date.now()}.${ext}`;
+    cb(null, unique);
+  }
+});
+const uploadProfilePic = multer({ storage: profilePicStorage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Profile picture upload endpoint
+router.post("/profile/picture", uploadProfilePic.single("profile_picture"), async (req, res) => {
+  if (!req.session.user) return res.status(401).json({ message: "Not authenticated" });
+  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+  try {
+    const picPath = "profile-pics/" + req.file.filename;
+    const connection = await connectionPromise;
+    await connection.query("UPDATE users SET profile_picture = ? WHERE email = ?", [picPath, req.session.user.email]);
+    return res.json({ message: "Profile picture updated!", path: picPath });
+  } catch (err) {
+    console.error("Error saving profile picture:", err);
+    return res.status(500).json({ message: "Failed to save profile picture" });
+  }
 });
 
 // Profile page
@@ -767,7 +811,7 @@ router.get("/profile", (req, res) => {
     let connection = await connectionPromise;
     var user = req.session.user.email;
     var [userInfo] = await connection.query(
-      "select username, rep_points, reviews_given, no_of_posts from users where email = ?",
+      "select username, rep_points, reviews_given, no_of_posts, profile_picture from users where email = ?",
       [user]
     );
     userInfo = userInfo[0];
@@ -799,15 +843,16 @@ router.get("/post", (req, res) => {
 });
 
 router.post("/post", upload.single("image"), (req, res) => {
-  async function imageEval(prompt, fileName) {
-    const ai = getGroqClient();
-    const completion = await ai.chat.completions.create({
-      model: "llama-3.2-11b-vision-preview",
-      messages: [{ role: "user", content: prompt }],
+  async function imageEval(imagePart, fileName) {
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],
+      config: { responseMimeType: "application/json" }
     });
 
-    if (completion.choices[0].message.content) {
-      let responseText = completion.choices[0].message.content;
+    const responseText = response.text;
+    if (responseText) {
       let source = path.join(__dirname, "../eval", "images", fileName);
       let destination = path.join(__dirname, "../public", "posts", fileName);
       await fs.copyFile(source, destination, (err) => {
@@ -827,12 +872,23 @@ router.post("/post", upload.single("image"), (req, res) => {
         console.log("Sucessfully deleted image from evaluation.");
       });
 
+      // Parse decision from the response
+      try {
+        const parsed = JSON.parse(responseText);
+        if (parsed.decision === "DECLINED") {
+          let imagepath = path.join(__dirname, "../eval", "images", fileName);
+          fs.unlink(imagepath, (err) => { if (err) console.error(err); });
+          return res.json({
+            message: "Inappropriate content detected! Please upload data that aligns with our guidelines.",
+            color: "red",
+          });
+        }
+      } catch (_) { /* If parse fails, proceed — approval assumed */ }
+
       let output = [fileName, responseText];
       console.log("Evaluation success!");
-
       return output;
     } else {
-      //Delete the file and send error message
       console.log("Evaluation failed");
       let imagepath = path.join(__dirname, "../eval", "images", fileName);
       fs.unlink(imagepath, (err) => {
@@ -851,7 +907,7 @@ router.post("/post", upload.single("image"), (req, res) => {
   }
 
   async function checkCredibility(prompt, useGrounding) {
-    const ai = getGroqClient();
+    const ai = getGeminiClient();
     const response = await generateVerificationResponse(ai, prompt);
 
     if (!response.text) {
@@ -861,19 +917,16 @@ router.post("/post", upload.single("image"), (req, res) => {
 
     const result = normalizeVerificationResult(JSON.parse(response.text), response);
 
-    // Detect AI-generated content with a fast secondary call
+    // Detect AI-generated content with a fast secondary call via Gemini
     try {
-      const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? prompt.find(p => p.type === 'text')?.text || '' : '');
-      if (textToCheck.length > 50) {
-        const aiDetectCompletion = await ai.chat.completions.create({
-          model: "llama-3.3-70b-versatile",
-          messages: [{
-            role: "user",
-            content: `Does the following text appear to have been written by an AI or LLM (ChatGPT, Claude, Gemini, etc.)? Look for uniform structure, lack of personal voice, unnaturally polished language, and generic phrasing. Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}`
-          }],
-          response_format: { type: "json_object" }
+      const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? (prompt.find(p => p.text || (typeof p === 'string')) || {}).text || '' : '');
+      if (textToCheck && textToCheck.length > 50) {
+        const aiDetectResponse = await ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: [{ role: "user", parts: [{ text: `Does the following text appear to have been written by an AI or LLM? Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}` }] }],
+          config: { responseMimeType: "application/json" }
         });
-        const aiDetectResult = JSON.parse(aiDetectCompletion.choices[0].message.content);
+        const aiDetectResult = JSON.parse(aiDetectResponse.text);
         result.is_ai_generated = aiDetectResult.is_ai_generated === true && aiDetectResult.confidence !== 'low';
       } else {
         result.is_ai_generated = false;
@@ -926,11 +979,7 @@ router.post("/post", upload.single("image"), (req, res) => {
                 imagePassedToAi = image;
 
                 console.log("Evaluating image");
-                var multimodalPrompt = [
-                  { type: "text", text: imageEvalPrompt },
-                  imagePassedToAi
-                ];
-                var output = await imageEval(multimodalPrompt, targetFile);
+                var output = await imageEval(imagePassedToAi, targetFile);
                 if (!Array.isArray(output)) return;
                 dbImagePath = "posts/" + output[0];
               }
