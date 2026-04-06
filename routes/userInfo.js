@@ -465,10 +465,10 @@ function isRetryableVerificationError(error) {
 
 async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
   let lastError;
+  const isMultimodal = Array.isArray(prompt);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      let isMultimodal = Array.isArray(prompt);
       let contents;
 
       if (isMultimodal) {
@@ -484,14 +484,20 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
         contents = [{ role: "user", parts: [{ text: prompt }] }];
       }
 
+      // responseSchema is incompatible with multimodal (image) calls in Gemini API
+      // Only apply it for plain text prompts
+      const config = isMultimodal
+        ? { responseMimeType: "application/json", temperature: 0.3 }
+        : {
+            responseMimeType: "application/json",
+            responseSchema: evidenceResponseStructure,
+            temperature: 0.3,
+          };
+
       const response = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: evidenceResponseStructure,
-          temperature: 0.3,
-        }
+        config,
       });
 
       return {
@@ -840,6 +846,36 @@ router.post("/profile", (req, res) => {
   }
 });
 
+// Update username
+router.post("/update-username", async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const { username } = req.body;
+  if (!username || typeof username !== "string" || username.trim().length < 3) {
+    return res.status(400).json({ message: "Username must be at least 3 characters long" });
+  }
+
+  try {
+    const cleanUsername = username.trim();
+    const connection = await connectionPromise;
+
+    // Check if username already exists (excluding the current user)
+    const [existing] = await connection.query("SELECT email FROM users WHERE username = ? AND email != ?", [cleanUsername, req.session.user.email]);
+    if (existing.length > 0) {
+      return res.status(409).json({ message: "Username is already taken" });
+    }
+
+    await connection.query("UPDATE users SET username = ? WHERE email = ?", [cleanUsername, req.session.user.email]);
+    req.session.user.username = cleanUsername; // Also update session if desired
+    return res.json({ message: "Username updated successfully!" });
+  } catch (err) {
+    console.error("Error updating username:", err);
+    return res.status(500).json({ message: "Failed to update username" });
+  }
+});
+
 //Posting page
 router.get("/post", (req, res) => {
   if (req.session.user) {
@@ -851,6 +887,18 @@ router.get("/post", (req, res) => {
 router.post("/post", upload.single("media"), (req, res) => {
   async function imageEval(prompt, fileName) {
     const ai = getGeminiClient();
+    
+    // Convert the evaluated image file to inlineData for genai consumption
+    const imagepath = path.join(__dirname, "../eval", "images", fileName);
+    const mimeType = fileName.toLowerCase().endsWith('.png') ? 'image/png' 
+                   : (fileName.toLowerCase().endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+    const imagePart = {
+        inlineData: {
+            data: require('fs').readFileSync(imagepath).toString("base64"),
+            mimeType: mimeType
+        }
+    };
+
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],

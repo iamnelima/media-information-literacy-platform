@@ -269,6 +269,19 @@
 
                   <!-- ── Sign Up Form ── -->
                   <form class="sign-up-form space-y-4" style="display: none">
+                    <!-- Username -->
+                    <div class="space-y-2">
+                      <label class="text-sm font-medium leading-none" for="signup-username">Username</label>
+                      <input
+                        name="username"
+                        type="text"
+                        class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:text-sm"
+                        id="signup-username"
+                        placeholder="Choose a username"
+                        required
+                      />
+                    </div>
+
                     <!-- Email -->
                     <div class="space-y-2">
                       <label class="text-sm font-medium leading-none" for="signup-email">Email</label>
@@ -491,11 +504,12 @@
           e.preventDefault();
 
           const email           = signupEmailInput.value.trim();
+          const username        = document.getElementById("signup-username").value.trim();
           const password        = signupPasswordInput.value;
           const confirmPassword = confirmInput.value;
 
           // Empty check
-          if (!email || !password || !confirmPassword) {
+          if (!username || !email || !password || !confirmPassword) {
             showMessage("All fields are required.", "red");
             return;
           }
@@ -527,7 +541,7 @@
           fetch("/signin", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, password, confirmPassword }),
+            body: JSON.stringify({ email, password, confirmPassword, username }),
           })
             .then((r) => r.json())
             .then((data) => {
@@ -575,6 +589,7 @@
               showMessage(data.message, data.color);
               if (data.color === "green") {
                 sessionStorage.setItem("user", data.user);
+                sessionStorage.setItem("username", data.username);
                 window.location.href = "/";
               }
             })

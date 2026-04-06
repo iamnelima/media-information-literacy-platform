@@ -408,11 +408,18 @@
                     </span>
                   </div>
                   <div class="flex-1 space-y-3">
-                    <div>
-                      <h1 class="text-2xl font-bold">
+                    <div class="flex items-center space-x-2">
+                      <h1 class="text-2xl font-bold" id="profile-username-display">
                         <%= userInfo.username%>
                       </h1>
-                      <!-- <p class="text-muted-foreground">@johndoe </p> -->
+                      <button id="edit-username-btn" class="text-muted-foreground hover:text-primary transition-colors" title="Edit Username">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+                      </button>
+                      <div id="edit-username-form" class="hidden flex items-center space-x-2">
+                        <input type="text" id="edit-username-input" class="h-8 rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" value="<%= userInfo.username%>" />
+                        <button id="save-username-btn" class="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
+                        <button id="cancel-username-btn" class="h-8 rounded-md bg-muted px-3 text-xs font-medium text-foreground hover:bg-muted/80">Cancel</button>
+                      </div>
                     </div>
                     <div
                       class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground"
@@ -746,7 +753,8 @@
       emailHolder.textContent = sessionEmail;
 
       var navEmailEl = document.getElementById('nav-user-email');
-      if (navEmailEl) navEmailEl.textContent = sessionEmail;
+      var sessionUsername = sessionStorage.getItem('username');
+      if (navEmailEl) navEmailEl.textContent = sessionUsername ? '@' + sessionUsername : sessionEmail;
 
       // Store profile picture in sessionStorage so other pages can use it
       <% if (userInfo.profile_picture) { %>
@@ -821,6 +829,65 @@
               statusEl.textContent = 'Error';
               setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
             });
+        });
+      }
+
+      // Username Edit Logic
+      const editBtn = document.getElementById('edit-username-btn');
+      const saveBtn = document.getElementById('save-username-btn');
+      const cancelBtn = document.getElementById('cancel-username-btn');
+      const editForm = document.getElementById('edit-username-form');
+      const usernameDisplay = document.getElementById('profile-username-display');
+      const usernameInput = document.getElementById('edit-username-input');
+
+      if (editBtn) {
+        editBtn.addEventListener('click', () => {
+          usernameDisplay.classList.add('hidden');
+          editBtn.classList.add('hidden');
+          editForm.classList.remove('hidden');
+        });
+
+        cancelBtn.addEventListener('click', () => {
+          usernameDisplay.classList.remove('hidden');
+          editBtn.classList.remove('hidden');
+          editForm.classList.add('hidden');
+          usernameInput.value = usernameDisplay.textContent.trim();
+        });
+
+        saveBtn.addEventListener('click', () => {
+          const newUsername = usernameInput.value.trim();
+          if (newUsername.length < 3) {
+            alert("Username must be at least 3 characters.");
+            return;
+          }
+          saveBtn.textContent = 'Saving...';
+          saveBtn.disabled = true;
+
+          fetch('/update-username', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: newUsername })
+          }).then(res => res.json()).then(data => {
+            saveBtn.textContent = 'Save';
+            saveBtn.disabled = false;
+            
+            if (data.message === "Username updated successfully!") {
+              usernameDisplay.textContent = newUsername;
+              sessionStorage.setItem("username", newUsername);
+              // Also update the UI top right dropdown
+              const navAvatarUsername = document.getElementById('nav-user-email');
+              if (navAvatarUsername) {
+                  navAvatarUsername.textContent = '@' + newUsername; // Update avatar too
+              }
+              cancelBtn.click(); // Hide form
+            } else {
+              alert(data.message || "Failed to update username");
+            }
+          }).catch(err => {
+            saveBtn.textContent = 'Save';
+            saveBtn.disabled = false;
+            alert("Network error.");
+          });
         });
       }
     </script>

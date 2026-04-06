@@ -104,7 +104,13 @@ router.get("/signin", (req, res) => {
 // ── Sign Up ──────────────────────────────────────────────────────────────────
 router.post("/signin", async (req, res) => {
   try {
-    const { email, password, confirmPassword } = req.body;
+    const { email, password, confirmPassword, username: clientUsername } = req.body;
+
+    // 0. Validate username
+    if (!clientUsername || typeof clientUsername !== "string" || clientUsername.trim().length < 3) {
+      return res.status(400).json({ message: "Username must be at least 3 characters.", color: "red" });
+    }
+    const username = clientUsername.trim();
 
     // 1. Validate email
     const emailCheck = validateEmail(email);
@@ -113,7 +119,6 @@ router.post("/signin", async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const username = cleanEmail.split("@")[0];
 
     // 2. Check passwords match (do this before hashing)
     if (!password || !confirmPassword) {
@@ -179,9 +184,9 @@ router.post("/login", async (req, res) => {
 
     const connection = await connectionPromise;
 
-    // Single query — fetch both email and password together
+    // Single query — fetch email, password, and username together
     const [rows] = await connection.query(
-      "SELECT email, user_password FROM users WHERE email = ?",
+      "SELECT email, user_password, username FROM users WHERE email = ?",
       [cleanEmail]
     );
 
@@ -204,12 +209,13 @@ router.post("/login", async (req, res) => {
     }
 
     // Create session
-    req.session.user = { email: cleanEmail };
+    req.session.user = { email: cleanEmail, username: rows[0].username };
 
     return res.status(200).json({
       message: "Access granted. Redirecting…",
       color: "green",
       user: req.session.user.email,
+      username: req.session.user.username,
     });
 
   } catch (err) {
