@@ -1,6 +1,7 @@
 const express = require("express");
 require("dotenv").config();
 const { GoogleGenAI, Type } = require("@google/genai");
+const Groq = require("groq-sdk");
 const router = express.Router();
 const connectionPromise = require("./connection.js");
 const multer = require("multer");
@@ -27,6 +28,20 @@ function getGeminiClient() {
   }
 
   return new GoogleGenAI({ apiKey });
+}
+
+function getGroqClient() {
+  const apiKey = (process.env.GROQ_API_KEY || "")
+    .replace(/^"|"$/g, "")
+    .trim();
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing GROQ_API_KEY. Add a valid Groq API key to the .env file."
+    );
+  }
+
+  return new Groq({ apiKey });
 }
 
 const storage = multer.diskStorage({
@@ -139,7 +154,8 @@ You are an evidence-first fact-checking agent for **MILES (Media & Information L
   * 60–69 → "Somewhat Credible" (yellow)
   * 50–59 → "Low Credibility" (orange)
   * < 50 → "Not Credible" (red)
-* Compute credibility_score by combining: claim-level evidence weights, source reliabilities, recency, and image manipulation likelihood (if image relevant). Document the weighting formula briefly.
+  * 0 → Set to exactly 0 if a central claim is verifiably false, objectively wrong, or completely debunked by solid evidence.
+* Compute credibility_score by combining: claim-level evidence weights, source reliabilities, recency, and image manipulation likelihood (if image relevant). Document the weighting formula briefly. Provide a "score_breakdown" string explicitly explaining why X% is true and why the remaining Y% is unverified/false.
 
 **OUTPUT FORMAT (JAVASCRIPT OBJECT):**
 
@@ -231,6 +247,10 @@ const responseStructure = {
       type: Type.INTEGER,
       description: "Overall credibility score from 0 to 100",
     },
+    score_breakdown: {
+      type: Type.STRING,
+      description: "A short 1-2 sentence explanation breaking down the meaning of the score (e.g., '30% because the name is real, but the remaining 70% is completely fabricated').",
+    },
     verdict_label: {
       type: Type.STRING,
       description:
@@ -271,13 +291,20 @@ Scoring rules:
 - 60 to 69 = Somewhat Credible, yellow
 - 50 to 59 = Low Credibility, orange
 - Below 50 = Not Credible, red
+- 0 = Set to exactly 0 if the main claim is verifiably false, a hoax, or totally debunked.
 
-Return valid JSON only. Keep explanations concise and evidence-based.
+Return valid JSON only. Keep explanations concise and evidence-based. Include a "score_breakdown" string that explains exactly why the score is X% and what the remaining portion means.
 
 For key_claims:
 - Extract up to 3 important factual claims.
 - assessment must be one of: supported, mixed, weak, contradicted, unverified
 - confidence must be one of: high, medium, low
+
+Categorize the post into a sector:
+- sector must be one of: Politics, Health, Tech, Agriculture, Entertainment, General.
+
+If the user's post is a personal lifestyle update (e.g., "It's my birthday"), spam, or irrelevant chatter, you MUST REJECT IT.
+- Set verdict_label to "REJECTED_PERSONAL" and credibilityScore to 0.
 
 For supporting_evidence and contradicting_evidence:
 - Write short evidence summaries, not source titles.
@@ -296,6 +323,10 @@ const evidenceResponseStructure = {
     credibilityScore: {
       type: Type.INTEGER,
       description: "Overall credibility score from 0 to 100",
+    },
+    score_breakdown: {
+      type: Type.STRING,
+      description: "A short 1-2 sentence explanation breaking down the meaning of the score (e.g., '30% because the name is real, but the remaining 70% is completely fabricated').",
     },
     verdict_label: {
       type: Type.STRING,
@@ -349,6 +380,10 @@ const evidenceResponseStructure = {
       items: {
         type: Type.STRING,
       },
+    },
+    sector: {
+      type: Type.STRING,
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
     },
   },
 };
@@ -433,17 +468,40 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
+      let isMultimodal = Array.isArray(prompt);
+      let contents;
+
+      if (isMultimodal) {
+        // Build multimodal content array for Gemini
+        const parts = prompt.map((p) => {
+          if (p.inlineData) return p; // image part
+          if (typeof p === 'string') return { text: p };
+          if (p.text) return { text: p.text };
+          return p;
+        });
+        contents = [{ role: "user", parts }];
+      } else {
+        contents = [{ role: "user", parts: [{ text: prompt }] }];
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents,
         config: {
           responseMimeType: "application/json",
           responseSchema: evidenceResponseStructure,
-        },
+          temperature: 0.3,
+        }
       });
+
+      return {
+        text: response.text,
+        candidates: response.candidates || []
+      };
     } catch (error) {
       lastError = error;
-      if (!isRetryableVerificationError(error) || attempt === maxAttempts) {
+      const status = error?.status;
+      if (attempt === maxAttempts || (status !== 429 && status !== 500 && status !== 503)) {
         throw error;
       }
 
@@ -559,6 +617,7 @@ function normalizeVerificationResult(aiResponse, response) {
       (sources.length > 0
         ? "Grounded web verification with claim decomposition."
         : "Model-only verification with no grounded sources returned."),
+    score_breakdown: aiResponse?.score_breakdown || null,
     key_claims: safeArray(aiResponse?.key_claims).slice(0, 3),
     supporting_evidence: safeArray(aiResponse?.supporting_evidence).slice(0, 3),
     contradicting_evidence: safeArray(aiResponse?.contradicting_evidence).slice(
@@ -617,6 +676,15 @@ const [createdAtColumn] = await connection.query(
     );
   }
 
+  const [aiGeneratedColumn] = await connection.query(
+    "show columns from posts like 'is_ai_generated'"
+  );
+  if (aiGeneratedColumn.length === 0) {
+    await connection.query(
+      "alter table posts add column is_ai_generated tinyint(1) default 0"
+    );
+  }
+
   const [aiVideoFlagColumn] = await connection.query(
     "show columns from posts like 'ai_video_flag'"
   );
@@ -635,12 +703,13 @@ function generateHash(data) {
   return hash;
 }
 
-async function fileToGenerativePart(path, mimeType) {
+async function fileToGenerativePart(filePath, mimeType) {
+  const base64Str = fs.readFileSync(filePath, { encoding: "base64" });
   return {
     inlineData: {
-      data: fs.readFileSync(path, { encoding: "base64" }),
-      mimeType,
-    },
+      data: base64Str,
+      mimeType
+    }
   };
 }
 
@@ -676,21 +745,66 @@ wss.on("connection", async function (ws) {
 
     const prompt = message.promptToSend;
     const chatbot = getGeminiClient();
-    const response = await chatbot.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: milesPersona + prompt,
-    });
+    try {
+      const completion = await chatbot.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { systemInstruction: milesPersona }
+      });
 
-    if (response.text) {
-      ws.send(response.text);
-    } else {
-      ws.send(response.promptFeedback);
+      if (completion.text) {
+        ws.send(completion.text);
+      }
+    } catch (e) {
+      console.error("Chatbot error:", e);
+      ws.send("I'm currently unable to respond. Please try again later.");
     }
   });
 
   ws.on("close", function () {
     console.log("Client Disconnected");
   });
+});
+
+// Ensure profile_picture column exists
+async function ensureProfilePictureColumn() {
+  const connection = await connectionPromise;
+  const [col] = await connection.query("SHOW COLUMNS FROM users LIKE 'profile_picture'");
+  if (col.length === 0) {
+    await connection.query("ALTER TABLE users ADD COLUMN profile_picture varchar(500) DEFAULT NULL");
+    console.log("Added profile_picture column to users table.");
+  }
+}
+ensureProfilePictureColumn().catch(console.error);
+
+// Multer storage for profile pictures
+const profilePicStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, "../public", "profile-pics");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = file.mimetype.split("/")[1];
+    const unique = `${req.session.user.email.replace(/[^a-z0-9]/gi, "_")}_${Date.now()}.${ext}`;
+    cb(null, unique);
+  }
+});
+const uploadProfilePic = multer({ storage: profilePicStorage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Profile picture upload endpoint
+router.post("/profile/picture", uploadProfilePic.single("profile_picture"), async (req, res) => {
+  if (!req.session.user) return res.status(401).json({ message: "Not authenticated" });
+  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+  try {
+    const picPath = "profile-pics/" + req.file.filename;
+    const connection = await connectionPromise;
+    await connection.query("UPDATE users SET profile_picture = ? WHERE email = ?", [picPath, req.session.user.email]);
+    return res.json({ message: "Profile picture updated!", path: picPath });
+  } catch (err) {
+    console.error("Error saving profile picture:", err);
+    return res.status(500).json({ message: "Failed to save profile picture" });
+  }
 });
 
 // Profile page
@@ -704,7 +818,7 @@ router.get("/profile", (req, res) => {
     let connection = await connectionPromise;
     var user = req.session.user.email;
     var [userInfo] = await connection.query(
-      "select username, rep_points, reviews_given, no_of_posts from users where email = ?",
+      "select username, rep_points, reviews_given, no_of_posts, profile_picture from users where email = ?",
       [user]
     );
     userInfo = userInfo[0];
@@ -738,11 +852,13 @@ router.post("/post", upload.single("media"), (req, res) => {
   async function imageEval(prompt, fileName) {
     const ai = getGeminiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
+      model: "gemini-2.0-flash",
+      contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],
+      config: { responseMimeType: "application/json" }
     });
 
-    if (response.text) {
+    const responseText = response.text;
+    if (responseText) {
       let source = path.join(__dirname, "../eval", "images", fileName);
       let destination = path.join(__dirname, "../public", "posts", fileName);
       await fs.copyFile(source, destination, (err) => {
@@ -762,12 +878,23 @@ router.post("/post", upload.single("media"), (req, res) => {
         console.log("Sucessfully deleted image from evaluation.");
       });
 
-      let output = [fileName, response.text];
-      console.log("Evaluation success!");
+      // Parse decision from the response
+      try {
+        const parsed = JSON.parse(responseText);
+        if (parsed.decision === "DECLINED") {
+          let imagepath = path.join(__dirname, "../eval", "images", fileName);
+          fs.unlink(imagepath, (err) => { if (err) console.error(err); });
+          return res.json({
+            message: "Inappropriate content detected! Please upload data that aligns with our guidelines.",
+            color: "red",
+          });
+        }
+      } catch (_) { /* If parse fails, proceed — approval assumed */ }
 
+      let output = [fileName, responseText];
+      console.log("Evaluation success!");
       return output;
     } else {
-      //Delete the file and send error message
       console.log("Evaluation failed");
       let imagepath = path.join(__dirname, "../eval", "images", fileName);
       fs.unlink(imagepath, (err) => {
@@ -794,7 +921,28 @@ router.post("/post", upload.single("media"), (req, res) => {
       throw new Error("No verification response was returned by the model.");
     }
 
-    return normalizeVerificationResult(JSON.parse(response.text), response);
+    const result = normalizeVerificationResult(JSON.parse(response.text), response);
+
+    // Detect AI-generated content with a fast secondary call via Gemini
+    try {
+      const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? (prompt.find(p => p.text || (typeof p === 'string')) || {}).text || '' : '');
+      if (textToCheck && textToCheck.length > 50) {
+        const aiDetectResponse = await ai.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: [{ role: "user", parts: [{ text: `Does the following text appear to have been written by an AI or LLM? Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}` }] }],
+          config: { responseMimeType: "application/json" }
+        });
+        const aiDetectResult = JSON.parse(aiDetectResponse.text);
+        result.is_ai_generated = aiDetectResult.is_ai_generated === true && aiDetectResult.confidence !== 'low';
+      } else {
+        result.is_ai_generated = false;
+      }
+    } catch (aiDetectErr) {
+      console.warn("AI detection failed (non-critical):", aiDetectErr.message);
+      result.is_ai_generated = false;
+    }
+
+    return result;
   }
 
   async function main() {
@@ -833,13 +981,12 @@ router.post("/post", upload.single("media"), (req, res) => {
                 });
               }
 
-              var imagePath = "";
+             var imagePath = "";
               var ext = "";
               var dbImagePath = null;
               var imagePassedToAi = null;
               var aiVideoFlag = null;
-
-               if (targetFile.trim() != "") {
+              if (targetFile.trim() != "") {
                 imagePath = path.join(
                   __dirname,
                   "../eval",
@@ -856,13 +1003,11 @@ router.post("/post", upload.single("media"), (req, res) => {
                   dbImagePath = "posts/" + targetFile;
                   imagePassedToAi = null;
                   console.log("Video saved, running AI detection");
-
-                 // AI video analysis + AI detection
+                  // AI video analysis + AI detection
                   try {
                     const videoMime = req.file?.mimetype || "video/mp4";
                     const videoPart = await fileToGenerativePart(destination, videoMime);
                     const aiDetectClient = getGeminiClient();
-
                     // If no text provided, generate description from video
                     if (!req.body.content || req.body.content.trim() === "") {
                       const descResponse = await aiDetectClient.models.generateContent({
@@ -873,7 +1018,6 @@ router.post("/post", upload.single("media"), (req, res) => {
                         content = descResponse.text.trim();
                       }
                     }
-
                     // AI-generated video detection
                     const aiDetectResponse = await aiDetectClient.models.generateContent({
                       model: "gemini-2.5-flash",
@@ -889,17 +1033,19 @@ router.post("/post", upload.single("media"), (req, res) => {
                       }
                     }
                   } catch(e) {
-                    console.warn("AI video detection failed:", e.message);
+                    console.warn("AI video analysis failed:", e.message);
                     aiVideoFlag = null;
                   }
                 } else {
-                  const mediaMimeType = req.file?.mimetype || "image/" + ext;
-                  const media = await fileToGenerativePart(imagePath, mediaMimeType);
-                  imagePassedToAi = media;
+                  const imageMimeType = "image/" + ext;
+                  const image = await fileToGenerativePart(imagePath, imageMimeType);
+                  imagePassedToAi = image;
                   console.log("Evaluating image");
-                  var multimodalPrompt = [media, { text: imageEvalPrompt }];
+                  var multimodalPrompt = [image, { text: imageEvalPrompt }];
                   var output = await imageEval(multimodalPrompt, targetFile);
-                  if (!Array.isArray(output)) return;
+                  if (!Array.isArray(output)) {
+                    return;
+                  }
                   dbImagePath = "posts/" + output[0];
                   console.log("Out of image evaluation function");
                 }
@@ -910,28 +1056,26 @@ router.post("/post", upload.single("media"), (req, res) => {
               var imageLocation = dbImagePath;
               var textContent = content;
               var author = req.session.user.email.split("@")[0];
-              const useGrounding = shouldUseGroundedVerification(
-                content,
-                Boolean(imagePassedToAi)
-              );
+
+              const useGrounding = shouldUseGroundedVerification(content, Boolean(imagePassedToAi));
+              let aiPrompt = buildVerificationPrompt(content, useGrounding);
 
               if (imagePassedToAi) {
                 multimodalPrompt = [
-                  imagePassedToAi,
-                  { text: buildVerificationPrompt(content, useGrounding) },
+                  { type: "text", text: aiPrompt },
+                  imagePassedToAi
                 ];
               } else {
-                multimodalPrompt = buildVerificationPrompt(content, useGrounding);
+                multimodalPrompt = aiPrompt;
               }
-              var aiResponse = await checkCredibility(
-                multimodalPrompt,
-                useGrounding
-              );
+
+              var aiResponse = await checkCredibility(multimodalPrompt, useGrounding);
               var credScore = aiResponse.credibilityScore;
               var aiAnalysis = aiResponse.explanation;
               var dateOfCheck = aiResponse.date_of_check;
               var verdictLabel = aiResponse.verdict_label;
               var verdictColor = aiResponse.verdict_color;
+              var sector = req.body.sector || aiResponse.sector || "General";
               var verificationJson = JSON.stringify(aiResponse);
               var sector = req.body.sector || aiResponse.sector || "General";
               if (verdictLabel === "REJECTED_PERSONAL") {
@@ -955,6 +1099,15 @@ router.post("/post", upload.single("media"), (req, res) => {
                 console.warn("Claim count error:", claimErr.message);
               }
 
+              // Guardrail Check: Block Personal/Spam Posts
+              if (verdictLabel === "REJECTED_PERSONAL") {
+                console.log("Blocked personal/spam post from " + author);
+                return res.json({
+                  message: "MILES is dedicated to news, claims, and media analysis. Please refrain from personal lifestyle posts, spam, or irrelevant chatter.",
+                  color: "red"
+                });
+              }
+
               const connection = await connectionPromise;
 
              let dbQuery =
@@ -976,25 +1129,16 @@ router.post("/post", upload.single("media"), (req, res) => {
               ];
               await connection.query(dbQuery, dbArray);
 
-              // Auto-delete safety net: remove any post that slipped past guardrails
-              await connection.query(
-                "DELETE FROM posts WHERE verdict_label = \'REJECTED_PERSONAL\'"
-              );
-              await connection.query(
-                "update users set rep_points = rep_points + 1 where email = ?",
-                [req.session.user.email]
-              );
-              await connection.query(
-                "update users set no_of_posts = no_of_posts + 1 where email = ?",
-                [req.session.user.email]
-              );
-              console.log("Finished loading to database");
+              // Auto-delete safety net
+              await connection.query("DELETE FROM posts WHERE verdict_label = 'REJECTED_PERSONAL'");
 
-              return res.json({
-                message:
-                  "Successfully posted content. Thank you for your contribution.",
-                color: "blue",
-              });
+              // Add rep points and posts
+              await connection.query("update users set rep_points = rep_points + 1 where email = ?", [req.session.user.email]);
+              await connection.query("update users set no_of_posts = no_of_posts + 1 where email = ?", [req.session.user.email]);
+
+              console.log("Finished loading to database");
+              return res.json({ message: "Successfully posted content. Thank you for your contribution.", color: "blue" });
+
             } catch (e) {
               console.error(
                 "Error while loading to database. Error Code: " +
@@ -1034,7 +1178,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at, ai_video_flag from posts order by created_at desc limit 20;"
+     "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at, ai_video_flag from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -1066,6 +1210,85 @@ router.get("/", (req, res) => {
   }
 });
 
+// Single post detail page
+router.get("/posts/:id", (req, res) => {
+  if (!req.session.user) return res.render("401");
+
+  async function main() {
+    await ensureVerificationColumns();
+    const connection = await connectionPromise;
+    const postId = req.params.id;
+
+    const [rows] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where post_id = ? limit 1;",
+      [postId]
+    );
+
+    if (!rows.length) return res.status(404).render("404");
+
+    const post = rows[0];
+    post.verification = parseStoredVerification(post.verification_json);
+
+    const [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments where post_id = ? order by comment_id asc",
+      [postId]
+    );
+    post.comments = comments;
+
+    res.render("post-detail", { post });
+  }
+
+  main().catch((err) => {
+    console.error("Post detail error:", err);
+    if (!res.headersSent) res.status(500).send("Server error");
+  });
+});
+
+// Search page
+router.get("/search", (req, res) => {
+  const searchQuery = req.query.q || "";
+
+  async function main() {
+    await ensureVerificationColumns();
+    const connection = await connectionPromise;
+    var [posts] = await connection.query(
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where text_content like ? or author like ? order by created_at desc limit 30;",
+      [`%${searchQuery}%`, `%${searchQuery}%`]
+    );
+
+    //Fetch comments/reviews from database
+    var [comments] = await connection.query(
+      "select comment_id, post_id, review, commenter from comments"
+    );
+
+    //Add a comment element for each post
+    posts.forEach((post) => {
+      post.comments = [];
+      post.verification = parseStoredVerification(post.verification_json);
+    });
+
+    comments.forEach((comment) => {
+      posts.forEach((post) => {
+        if (comment.post_id == post.post_id) {
+          post.comments.push(comment);
+        }
+      });
+    });
+
+    res.render("index", {
+      posts,
+      pageTitle: `Search Results for "${searchQuery}"`,
+      currentSector: null,
+      searchQuery
+    });
+  }
+  if (req.session.user) {
+    main();
+  } else {
+    res.render("401");
+  }
+});
+
 // Sector pages
 router.get("/sectors/:sectorName", (req, res) => {
   let sectorName = req.params.sectorName;
@@ -1076,7 +1299,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Fetch posts from database for this specific sector
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where LOWER(sector) = LOWER(?) order by created_at desc limit 20;",
       [sectorName]
     );
 
@@ -1088,6 +1311,7 @@ router.get("/sectors/:sectorName", (req, res) => {
     //Add a comment element for each post
     posts.forEach((post) => {
       post.comments = [];
+      post.verification = parseStoredVerification(post.verification_json);
     });
 
     postsCounter = 0;
@@ -1117,7 +1341,7 @@ router.get("/myposts", (req, res) => {
 
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json from posts where author = ? limit 10;",
+      "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, sector, claim_count, created_at, verification_json, is_ai_generated from posts where author = ? order by created_at desc limit 10;",
       [user]
     );
 
@@ -1183,6 +1407,45 @@ router.post("/comments", (req, res) => {
     main();
   } else {
     res.render("401");
+  }
+});
+
+// Verify Comment endpoint
+router.post("/verify-comment", async (req, res) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { comment } = req.body;
+  if (!comment || comment.trim() === "") {
+    return res.status(400).json({ error: "No comment provided" });
+  }
+
+  try {
+    const ai = getGroqClient();
+    const promptText = `You are a fact-checking assistant for MILES. Evaluate the following user comment for credibility.
+Return evaluate credibility on a 0-100 scale. Provide a label, color, and explanation. If the comment is purely an opinion or greeting, label it as "Opinion/Unverifiable" and color it "gray".
+
+You MUST output a valid JSON object with the following keys EXACTLY:
+"credibility_score" (number), "verdict_label" (string), "verdict_color" (string), "explanation" (string).
+
+Comment: "${comment}"`;
+
+    const completion = await ai.chat.completions.create({
+      messages: [{ role: "user", content: promptText }],
+      model: "llama-3.3-70b-versatile",
+      response_format: { type: "json_object" }
+    });
+
+    const result = JSON.parse(completion.choices[0].message.content);
+    res.json(result);
+  } catch (error) {
+    console.error("Comment verification error:", error);
+    res.status(500).json({
+      verdict_label: "Verification Failed",
+      verdict_color: "red",
+      explanation: "Could not verify this comment at the moment due to an AI error or rate limit."
+    });
   }
 });
 
