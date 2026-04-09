@@ -654,273 +654,265 @@
       </div>
     </div>
     <script>
-      // ── AI filter toggle ──────────────────────────────────────
-      var aiFilterActive = false;
-      function toggleAiFilter(btn) {
-        aiFilterActive = !aiFilterActive;
-        document.getElementById('ai-btn-label').textContent = aiFilterActive ? 'Show AI-Generated' : 'Hide AI-Generated';
-        btn.style.background  = aiFilterActive ? 'rgba(139,92,246,0.12)' : '';
-        btn.style.color       = aiFilterActive ? '#7c3aed' : '';
-        btn.style.borderColor = aiFilterActive ? 'rgba(139,92,246,0.4)' : '';
-        document.querySelectorAll('.post-card[data-ai="true"]').forEach(function(c){ c.style.display = aiFilterActive ? 'none' : ''; });
-      }
+  // ── AI filter toggle ──────────────────────────────────────
+  var aiFilterActive = false;
+  function toggleAiFilter(btn) {
+    aiFilterActive = !aiFilterActive;
+    document.getElementById('ai-btn-label').textContent = aiFilterActive ? 'Show AI-Generated' : 'Hide AI-Generated';
+    btn.style.background  = aiFilterActive ? 'rgba(139,92,246,0.12)' : '';
+    btn.style.color       = aiFilterActive ? '#7c3aed' : '';
+    btn.style.borderColor = aiFilterActive ? 'rgba(139,92,246,0.4)' : '';
+    document.querySelectorAll('.post-card[data-ai="true"]').forEach(function(c){ c.style.display = aiFilterActive ? 'none' : ''; });
+  }
 
-      // ── Dynamic nav active state ──────────────────────────────
-      (function() {
-        var path = window.location.pathname;
-        document.querySelectorAll('nav a[href]').forEach(function(a) {
-          var href = a.getAttribute('href');
-          if (!href || href === '#') return;
-          var active = (href === '/' && path === '/') || (href !== '/' && path.startsWith(href));
-          if (active) { a.style.cssText += ';background:rgba(124,58,237,0.1);color:rgb(124,58,237);font-weight:600;'; }
-        });
-      })();
+  // ── Dynamic nav active state ──────────────────────────────
+  (function() {
+    var path = window.location.pathname;
+    document.querySelectorAll('nav a[href]').forEach(function(a) {
+      var href = a.getAttribute('href');
+      if (!href || href === '#') return;
+      var active = (href === '/' && path === '/') || (href !== '/' && path.startsWith(href));
+      if (active) { a.style.cssText += ';background:rgba(124,58,237,0.1);color:rgb(124,58,237);font-weight:600;'; }
+    });
+  })();
 
-      // ── Close sectors dropdown on outside click ───────────────
-      document.addEventListener('click', function(e) {
-        var dd  = document.getElementById('sectors-dropdown');
-        var btn = document.getElementById('sectors-menu-btn');
-        if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) { dd.classList.add('hidden'); }
+  // ── Close sectors dropdown on outside click ───────────────
+  document.addEventListener('click', function(e) {
+    var dd  = document.getElementById('sectors-dropdown');
+    var btn = document.getElementById('sectors-menu-btn');
+    if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) { dd.classList.add('hidden'); }
+  });
+
+  window.onload = function () {
+
+    // ── Details expand/collapse ───────────────────────────
+    var analysisBoxes = Array.from(document.getElementsByClassName('ai-analysis'));
+    var detailsButtons = Array.from(document.getElementsByClassName('details'));
+    var detailsMapper = new Map();
+
+    // Collapse all boxes initially
+    analysisBoxes.forEach(function(box) {
+      box.style.height = '125px';
+      box.style.overflow = 'hidden';
+    });
+
+    detailsButtons.forEach(function(btn, i) {
+      detailsMapper.set(btn, analysisBoxes[i]);
+
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var box = detailsMapper.get(btn);
+        if (!btn.classList.contains('show')) {
+          btn.classList.add('show');
+          box.style.height = 'auto';
+          box.style.overflow = 'visible';
+        } else {
+          btn.classList.remove('show');
+          box.style.height = '125px';
+          box.style.overflow = 'hidden';
+        }
       });
+    });
 
-      window.onload = function () {
-        // ── Details expand/collapse ───────────────────────────
-        var analysisBoxes = Array.from(document.getElementsByClassName('ai-analysis'));
-        Array.from(document.getElementsByClassName('details')).forEach(function(btn, i) {
-          btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var box = analysisBoxes[i];
-            if (!btn.classList.contains('show')) {
-              btn.classList.add('show');
-              box.style.height = 'fit-content';
-            } else {
-              btn.classList.remove('show');
-              box.style.height = '125px';
-            }
-          });
-        });
+    // ── Comment verify buttons ─────────────────────────────
+    document.querySelectorAll('.verify-comment-btn').forEach(function(btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var text   = decodeURIComponent(this.getAttribute('data-comment'));
+        var result = this.nextElementSibling;
+        var self   = this;
+        self.textContent = 'Verifying\u2026';
+        self.disabled = true;
+        fetch('/verify-comment', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({comment:text})})
+          .then(function(r){ return r.json(); })
+          .then(function(d) {
+            self.textContent = 'Verified';
+            result.classList.remove('hidden');
+            result.innerHTML = '<span style="color:'+d.verdict_color+';font-weight:bold;">['+d.verdict_label+']</span> '+d.explanation;
+          })
+          .catch(function(){ self.textContent = 'Verify Credibility'; self.disabled = false; });
+      });
+    });
 
-        // ── Comment verify buttons (pre-existing on load) ─────
-        document.querySelectorAll('.verify-comment-btn').forEach(function(btn) {
-          btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var text   = decodeURIComponent(this.getAttribute('data-comment'));
-            var result = this.nextElementSibling;
-            var self   = this;
-            self.textContent = 'Verifying\u2026';
-            self.disabled = true;
-            fetch('/verify-comment', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({comment:text})})
-              .then(function(r){ return r.json(); })
-              .then(function(d) {
-                self.textContent = 'Verified';
-                result.classList.remove('hidden');
-                result.innerHTML = '<span style="color:'+d.verdict_color+';font-weight:bold;">['+d.verdict_label+']</span> '+d.explanation;
-              })
-              .catch(function(){ self.textContent = 'Verify Credibility'; self.disabled = false; });
-          });
-        });
+    // ── Close comment modals ───────────────────────────────
+    Array.from(document.getElementsByClassName("close-btn")).forEach(function(btn) {
+      btn.addEventListener("click", function () {
+        btn.parentElement.parentElement.style.display = "none";
+      });
+    });
 
-        //Close buttons for comment modals
-        var closeBtns = Array.from(
-          document.getElementsByClassName("close-btn")
-        );
-        closeBtns.forEach((btn) => {
-          btn.addEventListener("click", function () {
-            let modalHolder = btn.parentElement.parentElement;
-            modalHolder.style.display = "none";
-          });
-        });
-
-        // sending a comment
-        var inputArr = Array.from(document.getElementsByTagName("input"));
-        var sendArr = Array.from(document.getElementsByClassName("send-btn"));
-        var inputCounter = 0;
-        var sendMapper = new Map();
-
-        sendArr.forEach((sendBtn) => {
-          sendMapper.set(sendBtn, inputArr[inputCounter]);
-          inputCounter++;
-
-          sendBtn.addEventListener("click", function () {
-            let input = sendMapper.get(sendBtn);
-            let review = input.value.trim();
-            if (review.length > 1) {
-              // fetch api
-              let commenter = sessionStorage.getItem("user").split("@")[0];
-              let postId = sendBtn.getAttribute("id");
-              console.log({ postId, review, commenter });
-              fetch("/comments", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  review,
-                  commenter,
-                  postId,
-                }),
-              })
-                .then((Response) => Response.json())
-                .then((data) => {
-                  if (data.message == "sent") {
-                    alert("Comment sent, refresh page to view.");
-                    input.value = "";
-                  } else {
-                    alert("Error! Comment not sent");
-                  }
-                });
-            } else {
-              alert("Please provide more content for the comment.");
-            }
-          });
-        });
-
-        // ==========================
-        // Inline Posting JavaScript
-        // ==========================
-        var textarea = document.getElementById("content");
-        var charCounter = document.getElementById("character-counter");
-        if(textarea) {
-          textarea.setAttribute("maxlength", "1000");
-          textarea.addEventListener("input", function () {
-            let counter = textarea.value.length;
-            if (counter >= 1000) {
-              charCounter.innerText = "Max";
-            } else {
-              charCounter.innerText = counter;
-            }
-          });
-        }
-
-        // Image Handling
-        var imageUpload = document.getElementById("image-upload");
-        var userMessage = document.getElementById("user-message");
-        var imageLabel = document.getElementById("image-label");
-        var holder = document.getElementById("holder");
-        var imageFile = null;
-
-        if(imageUpload) {
-          imageUpload.addEventListener("change", function (e) {
-            let files = e.target.files;
-            if(files.length === 0) return;
-
-            let file = files[0];
-            imageFile = file;
-            let size = file.size;
-            if (size > 10000000) {
-              userMessage.style.color = "red";
-              userMessage.innerText = "File must be 10MBs max";
-            } else {
-              const reader = new FileReader();
-              imageLabel.innerHTML = `<span class="text-xs text-primary">Image Selected</span>`;
-              userMessage.innerText = "";
-
-              reader.readAsDataURL(file);
-              reader.onload = function (event) {
-                holder.style.display = "block";
-                holder.style.backgroundImage = `url(${event.target.result})`;
-              };
-            }
-          });
-        }
-
-        if (postBtn) {
-          postBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            if (textarea.value.trim() == "") {
-              errorMessage.innerText = "Please provide some text for context.";
-              setTimeout(function () {
-                errorMessage.innerText = "";
-              }, 5000);
-              return;
-            } else {
-              let uploadData = new FormData();
-              uploadData.append("image", imageFile);
-              uploadData.append("content", textarea.value);
-
-              // Only insert sector if one explicitly exists on the page
-              if (sectorInput && sectorInput.value.trim() !== "") {
-                uploadData.append("sector", sectorInput.value);
+    // ── Send comment ───────────────────────────────────────
+    var inputArr = Array.from(document.getElementsByTagName("input"));
+    var sendArr  = Array.from(document.getElementsByClassName("send-btn"));
+    var sendMapper = new Map();
+    sendArr.forEach(function(sendBtn, i) {
+      sendMapper.set(sendBtn, inputArr[i]);
+      sendBtn.addEventListener("click", function () {
+        var input  = sendMapper.get(sendBtn);
+        var review = input.value.trim();
+        if (review.length > 1) {
+          var commenter = sessionStorage.getItem("user").split("@")[0];
+          var postId    = sendBtn.getAttribute("id");
+          fetch("/comments", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ review, commenter, postId }),
+          })
+            .then(function(r){ return r.json(); })
+            .then(function(data) {
+              if (data.message == "sent") {
+                alert("Comment sent, refresh page to view.");
+                input.value = "";
+              } else {
+                alert("Error! Comment not sent");
               }
+            });
+        } else {
+          alert("Please provide more content for the comment.");
+        }
+      });
+    });
 
-              // Modal Management
-              let modalHolder = document.getElementsByClassName("modal-overlay")[0];
-              let modal = document.getElementById("waiting");
-              modalHolder.style.display = "flex";
-              let messageArr = [
-                "Please wait while we process the content.",
-                "AI analyzing content.",
-              ];
-              let messageCounter = 0;
-              let modalInterval = setInterval(function () {
-                modal.textContent = messageArr[messageCounter];
-                messageCounter++;
-                if (messageCounter > 1) {
-                  messageCounter = 0;
-                }
-              }, 3000);
+    // ── Inline Posting ─────────────────────────────────────
+    var textarea    = document.getElementById("content");
+    var charCounter = document.getElementById("character-counter");
+    var errorMessage = document.getElementById("error-message");
+    var imageUpload = document.getElementById("image-upload");
+    var userMessage = document.getElementById("user-message");
+    var imageLabel  = document.getElementById("image-label");
+    var holder      = document.getElementById("holder");
+    var postBtn     = document.getElementById("post-btn");
+    var sectorInput = document.getElementById("current-sector");
+    var imageFile   = null;
 
-              fetch("/post", {
-                method: "POST",
-                body: uploadData,
-              })
-                .then((Response) => Response.json())
-                .then((data) => {
-                  clearInterval(modalInterval);
-                  if (data.color == "red" || data.color == "orange") {
-                    userMessage.textContent = data.message;
-                    userMessage.style.color = "red";
-                    modalHolder.style.display = "none";
-                  } else {
-                    modal.textContent = "Successfully uploaded content.";
-                    window.location.reload(); // Refresh inline to show new post!
-                  }
-                });
+    if (textarea) {
+      textarea.setAttribute("maxlength", "1000");
+      textarea.addEventListener("input", function () {
+        var counter = textarea.value.length;
+        charCounter.innerText = counter >= 1000 ? "Max" : counter;
+      });
+    }
+
+    if (imageUpload) {
+      imageUpload.addEventListener("change", function (e) {
+        var files = e.target.files;
+        if (!files || files.length === 0) return;
+        var file = files[0];
+        if (file.size > 10000000) {
+          userMessage.style.color = "red";
+          userMessage.innerText = "File must be 10MB max";
+          imageFile = null;
+        } else {
+          imageFile = file;
+          imageLabel.innerHTML = '<span class="text-xs text-primary">File Selected: ' + file.name + '</span>';
+          userMessage.innerText = "";
+          var reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = function (event) {
+            holder.style.display = "block";
+            // Show thumbnail for images, icon for video
+            if (file.type.startsWith('image/')) {
+              holder.style.backgroundImage = 'url(' + event.target.result + ')';
+            } else {
+              holder.style.backgroundImage = 'none';
+              holder.innerHTML = '<span style="font-size:20px;">🎬</span>';
+              holder.style.display = 'flex';
+              holder.style.alignItems = 'center';
+              holder.style.justifyContent = 'center';
             }
-          });
+          };
         }
-      };
+      });
+    }
 
-      document.addEventListener("DOMContentLoaded", function() {
-        // Hamburger Menu Toggle Logic
-        var sectorsMenuBtn = document.getElementById("sectors-menu-btn");
-        var sectorsDropdown = document.getElementById("sectors-dropdown");
+    if (postBtn) {
+      postBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if ((!textarea || textarea.value.trim() === "") && !imageFile) {
+          errorMessage.innerText = "Please add text or upload an image/video.";
+          setTimeout(function () { errorMessage.innerText = ""; }, 5000);
+          return;
+        }
 
-        if (sectorsMenuBtn && sectorsDropdown) {
-          sectorsMenuBtn.addEventListener("click", function (event) {
-            event.preventDefault();
-            event.stopPropagation(); // Prevent immediate closing
-            sectorsDropdown.classList.toggle("hidden");
-          });
+        var uploadData = new FormData();
+        // Only append image if a file was actually selected
+        if (imageFile) {
+          uploadData.append("media", imageFile);
+        }
+        uploadData.append("content", textarea.value);
+        if (sectorInput && sectorInput.value.trim() !== "") {
+          uploadData.append("sector", sectorInput.value);
+        }
 
-          // Close dropdown when clicking outside
-          window.addEventListener("click", function (e) {
-            if (!sectorsMenuBtn.contains(e.target) && !sectorsDropdown.contains(e.target)) {
-              sectorsDropdown.classList.add("hidden");
+        var modalHolder  = document.getElementsByClassName("modal-overlay")[0];
+        var modal        = document.getElementById("waiting");
+        modalHolder.style.display = "flex";
+        var messageArr   = ["Please wait while we process the content.", "AI analyzing content."];
+        var messageCounter = 0;
+        var modalInterval = setInterval(function () {
+          modal.textContent = messageArr[messageCounter];
+          messageCounter = (messageCounter + 1) % messageArr.length;
+        }, 3000);
+
+        fetch("/post", { method: "POST", body: uploadData })
+          .then(function(r){ return r.json(); })
+          .then(function(data) {
+            clearInterval(modalInterval);
+            if (data.color === "red" || data.color === "orange") {
+              userMessage.textContent = data.message;
+              userMessage.style.color = "red";
+              modalHolder.style.display = "none";
+            } else {
+              modal.textContent = "Successfully uploaded content.";
+              window.location.reload();
             }
+          })
+          .catch(function(err) {
+            clearInterval(modalInterval);
+            modalHolder.style.display = "none";
+            errorMessage.innerText = "Something went wrong. Please try again.";
+            console.error(err);
           });
-        }
+      });
+    }
 
-        // Mobile Sectors Toggle
-        var mobileSectorsBtn = document.getElementById("mobile-sectors-btn");
-        var mobileSectorsMenu = document.getElementById("mobile-sectors-menu");
-        if (mobileSectorsBtn && mobileSectorsMenu) {
-          mobileSectorsBtn.addEventListener("click", function(e) {
-            e.preventDefault();
-            mobileSectorsMenu.classList.toggle("hidden");
-          });
+    // ── Hamburger / mobile sectors ─────────────────────────
+    var sectorsMenuBtn   = document.getElementById("sectors-menu-btn");
+    var sectorsDropdown  = document.getElementById("sectors-dropdown");
+    if (sectorsMenuBtn && sectorsDropdown) {
+      sectorsMenuBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        sectorsDropdown.classList.toggle("hidden");
+      });
+      window.addEventListener("click", function (e) {
+        if (!sectorsMenuBtn.contains(e.target) && !sectorsDropdown.contains(e.target)) {
+          sectorsDropdown.classList.add("hidden");
         }
+      });
+    }
 
-        // Handle "Post" links scrolling to form
-        document.querySelectorAll('a[href="/post"]').forEach(link => {
-          link.addEventListener('click', function(e) {
-            const form = document.querySelector('.inline-posting-form-container');
-            if (form) {
-              e.preventDefault();
-              form.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              document.getElementById('content').focus();
-            }
-          });
+    var mobileSectorsBtn  = document.getElementById("mobile-sectors-btn");
+    var mobileSectorsMenu = document.getElementById("mobile-sectors-menu");
+    if (mobileSectorsBtn && mobileSectorsMenu) {
+      mobileSectorsBtn.addEventListener("click", function(e) {
+        e.preventDefault();
+        mobileSectorsMenu.classList.toggle("hidden");
+      });
+    }
+
+    // ── Post links scroll to form ──────────────────────────
+    document.querySelectorAll('a[href="/post"]').forEach(function(link) {
+      link.addEventListener('click', function(e) {
+        var form = document.querySelector('.inline-posting-form-container');
+        if (form) {
+          e.preventDefault();
+          form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          document.getElementById('content').focus();
         }
-      }
-    </script>
+      });
+    }); // ← this closing ); was missing before — that was the main crash
+  };
+</script>
   </body>
 </html>

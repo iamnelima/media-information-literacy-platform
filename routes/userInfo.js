@@ -7,7 +7,7 @@ const connectionPromise = require("./connection.js");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const crpto = require("crypto");
+const crypto = require("crypto");
 const ws = require("ws");
 let verificationColumnsEnsured = false;
 
@@ -57,7 +57,7 @@ const storage = multer.diskStorage({
    filename: (req, file, cb) => {
     try {
       let ext = file.mimetype.split("/")[1];
-      let randomName = require("crypto").randomBytes(16).toString("hex");
+      let randomName = crypto.randomBytes(16).toString("hex");
       return cb(null, randomName + "." + ext);
     } catch (e) {
       console.error("Error while naming file: " + e.code + "\n" + e);
@@ -484,8 +484,10 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
         contents = [{ role: "user", parts: [{ text: prompt }] }];
       }
 
+      const models = ["gemini-2.5-flash", "gemini-1.5-flash"];
+      const modelToUse = models[attempt - 1] || "gemini-1.5-flash";
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: modelToUse,
         contents,
         config: {
           responseMimeType: "application/json",
@@ -699,7 +701,7 @@ const [createdAtColumn] = await connection.query(
 
 //Generate hash for  image name
 function generateHash(data) {
-  let hash = crpto.createHash("sha256").update(data).digest("hex");
+  let hash = crypto.createHash("sha256").update(data).digest("hex");
   return hash;
 }
 
@@ -714,16 +716,16 @@ async function fileToGenerativePart(filePath, mimeType) {
 }
 
 //Web Socket for chatbot
-const wss = new ws.Server({ port: process.env.WSS });
-console.log("Web Socket server started on ws://localhost:5001");
+const wss = new ws.Server({ port: process.env.WSS || 5001 });
+console.log("Web Socket server started on ws://localhost:" + (process.env.WSS || 5001));
 
 const idempotentKeys = [];
 
 wss.on("connection", async function (ws) {
   ws.on("message", async function (clientData) {
-    let messsage = clientData.toString();
-    message = await JSON.parse(messsage);
-    let key = messsage.key;
+    let messageString = clientData.toString();
+    let message = await JSON.parse(messageString);
+    let key = message.key;
     let keyExists = false;
     for (let i = 0; i < idempotentKeys.length; i++) {
       if (key == idempotentKeys[i]) {
@@ -747,7 +749,7 @@ wss.on("connection", async function (ws) {
     const chatbot = getGeminiClient();
     try {
       const completion = await chatbot.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { systemInstruction: milesPersona }
       });
@@ -852,8 +854,8 @@ router.post("/post", upload.single("media"), (req, res) => {
   async function imageEval(prompt, fileName) {
     const ai = getGeminiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: prompt }],
       config: { responseMimeType: "application/json" }
     });
 
@@ -928,7 +930,7 @@ router.post("/post", upload.single("media"), (req, res) => {
       const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? (prompt.find(p => p.text || (typeof p === 'string')) || {}).text || '' : '');
       if (textToCheck && textToCheck.length > 50) {
         const aiDetectResponse = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: `Does the following text appear to have been written by an AI or LLM? Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}` }] }],
           config: { responseMimeType: "application/json" }
         });
@@ -962,9 +964,18 @@ router.post("/post", upload.single("media"), (req, res) => {
             });
           } else {
             try {
-           let content = req.body.content && req.body.content.trim() !== ""
-              ? req.body.content
-              : "";
+              // Validate: require either text OR media
+              let hasText = req.body.content && req.body.content.trim() !== "";
+              let hasMedia = req.file && req.file.filename;
+
+              if (!hasText && !hasMedia) {
+                return res.json({
+                  message: "Please provide either text content or upload a media file (image/video).",
+                  color: "red",
+                });
+              }
+
+              let content = hasText ? req.body.content.trim() : "";
               let targetFile = "";
               // Match uploaded file by req.file if available
               if (req.file && req.file.filename) {
@@ -1048,7 +1059,23 @@ router.post("/post", upload.single("media"), (req, res) => {
                   }
                   dbImagePath = "posts/" + output[0];
                   console.log("Out of image evaluation function");
-                }
+                   // If no text provided, generate description from the image
+                  if (!content || content.trim() === "") {
+                        try {
+                          const descClient = getGeminiClient();
+                          const descResponse = await descClient.models.generateContent({
+                            model: "gemini-2.5-flash",
+                            contents: [{ role: "user", parts: [imagePassedToAi, { text: "Describe what is shown in this image. Identify any claims, news, text, or notable content present. Be factual and concise." }] }],
+                          });
+                          if (descResponse.text) {
+                            content = descResponse.text.trim();
+                          }
+                        } catch (descErr) {
+                          console.warn("Image description failed:", descErr.message);
+                          content = "Image submitted for credibility analysis.";
+                        }
+                      }
+                    }
               }
 
               var postId = generateHash(content);
@@ -1077,7 +1104,6 @@ router.post("/post", upload.single("media"), (req, res) => {
               var verdictColor = aiResponse.verdict_color;
               var sector = req.body.sector || aiResponse.sector || "General";
               var verificationJson = JSON.stringify(aiResponse);
-              var sector = req.body.sector || aiResponse.sector || "General";
               if (verdictLabel === "REJECTED_PERSONAL") {
                 console.log("Blocked personal/spam post from " + author);
                 return res.json({
@@ -1178,7 +1204,7 @@ router.get("/", (req, res) => {
     //Fetch posts from database
     const connection = await connectionPromise;
     var [posts] = await connection.query(
-     "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at, ai_video_flag from posts order by created_at desc limit 20;"
+     "select post_id, author, image_location, text_content, credibility_score, verdict_label, verdict_color, ai_analysis, verification_json, sector, claim_count, created_at, ai_video_flag, is_ai_generated from posts order by created_at desc limit 20;"
     );
 
     //Fetch comments/reviews from database
@@ -1204,7 +1230,10 @@ router.get("/", (req, res) => {
     res.render("index", { posts, pageTitle: "Media Literacy Feed", currentSector: null });
   }
   if (req.session.user) {
-    main();
+    main().catch((error) => {
+      console.error("Error fetching posts:", error);
+      res.status(500).render("404");
+    });
   } else {
     res.render("401");
   }

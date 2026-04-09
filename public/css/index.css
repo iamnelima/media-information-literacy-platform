@@ -3694,7 +3694,7 @@ body {
 
 .ai-analysis {
   height: 125px;
-  transition: 2s ease-in;
+  transition: height 0.3s ease-out;
   overflow-y: hidden;
 }
 
