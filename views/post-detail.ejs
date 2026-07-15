@@ -124,7 +124,7 @@
 
         <!-- Badges row -->
         <div style="margin-bottom:8px;">
-          <% if(post.sector) { %><span class="badge badge-sector">📌 <%= post.sector %></span><% } %>
+          <% if(post.sector) { %><a href="/sectors/<%= String(post.sector).toLowerCase() %>" class="badge badge-sector" style="text-decoration:none;">📌 <%= post.sector %></a><% } %>
           <% if(post.claim_count && post.claim_count > 1) { %><span class="badge badge-claim">📢 Seen <%= post.claim_count %> times</span><% } %>
           <% if(post.is_ai_generated) { %><span class="badge badge-ai">🤖 AI-Generated Content</span><% } %>
         </div>

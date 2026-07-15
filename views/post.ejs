@@ -723,8 +723,32 @@
 
         // Post content, send to backend
         var postBtn = document.getElementById("post-btn");
+        var postForm = postBtn ? postBtn.closest("form") : null;
         var errorMessage = document.getElementById("error-message");
-        postBtn.addEventListener("click", function (e) {
+        function setProcessingState(isProcessing) {
+          if (!postBtn) return;
+          postBtn.disabled = isProcessing;
+          postBtn.style.opacity = isProcessing ? "0.7" : "1";
+          postBtn.innerText = isProcessing ? "Analyzing..." : "Post for Analysis";
+        }
+        function showModalMessage(message) {
+          var modalHolder = document.getElementsByClassName("modal-overlay")[0];
+          var modal = document.getElementById("waiting");
+          if (modalHolder && modal) {
+            modal.textContent = message;
+            modalHolder.style.display = "flex";
+          }
+        }
+        function hideModal() {
+          var modalHolder = document.getElementsByClassName("modal-overlay")[0];
+          if (modalHolder) {
+            modalHolder.style.display = "none";
+          }
+        }
+        if (!postForm) {
+          console.error("Post form was not found.");
+        }
+        (postForm || postBtn).addEventListener("click", function (e) {
           e.preventDefault();
           if (textarea.value.trim() == "" && !imageFile) {
             errorMessage.innerText = "Please provide text or upload an image/video.";
@@ -733,6 +757,7 @@
             }, 3003);
             return;
           } else {
+            setProcessingState(true);
             let uploadData = new FormData();
             uploadData.append("media", imageFile);
             uploadData.append("content", textarea.value);
@@ -740,52 +765,57 @@
               uploadData.append("sector", sectorParam);
             }
 
-            //Set the modal
-            let modalHolder =
-              document.getElementsByClassName("modal-overlay")[0];
-            let modal = document.getElementById("waiting");
-            modalHolder.style.display = "flex";
             let messageArr = [
               "Checking the post for credibility signals.",
               "Looking for evidence when the content needs deeper verification.",
             ];
             let messageCounter = 0;
             let loadingInterval = setInterval(function () {
-              modal.textContent = messageArr[messageCounter];
+              showModalMessage(messageArr[messageCounter]);
               messageCounter++;
 
               if (messageCounter > 1) {
                 messageCounter = 0;
               }
             }, 3003);
+            showModalMessage(messageArr[0]);
 
             fetch("/post", {
               method: "POST",
               body: uploadData,
             })
-              .then((Response) => Response.json())
+              .then(async (Response) => {
+                const payloadText = await Response.text();
+                try {
+                  return JSON.parse(payloadText);
+                } catch (_) {
+                  throw new Error(payloadText || "Server returned an invalid response.");
+                }
+              })
               .then((data) => {
                 clearInterval(loadingInterval);
                 if (data.color == "red") {
                   userMessage.textContent = data.message;
                   userMessage.style.color = "red";
-                  modalHolder.style.display = "none";
+                  hideModal();
                 } else if (data.color == "orange") {
-                  modalHolder.style.display = "none";
+                  hideModal();
                   userMessage.textContent = data.message;
                   userMessage.style.color = "red";
                 } else {
-                  modalHolder.style.display = "flex";
-                  modal.textContent = "Successfully uploaded content.";
+                  showModalMessage("Successfully uploaded content.");
                   window.location.href = "/";
                 }
+                setProcessingState(false);
               })
-              .catch(() => {
+              .catch((error) => {
                 clearInterval(loadingInterval);
-                modalHolder.style.display = "none";
+                hideModal();
+                console.error("Post request failed:", error);
                 userMessage.textContent =
                   "Verification failed. Please try again.";
                 userMessage.style.color = "red";
+                setProcessingState(false);
               });
           }
         });

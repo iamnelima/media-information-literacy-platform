@@ -11,6 +11,8 @@ const crpto = require("crypto");
 const ws = require("ws");
 let verificationColumnsEnsured = false;
 
+const geminiModel = (process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
+
 function ensureUploadDirectories() {
   fs.mkdirSync(path.join(__dirname, "../eval", "images"), { recursive: true });
   fs.mkdirSync(path.join(__dirname, "../public", "posts"), { recursive: true });
@@ -168,7 +170,7 @@ Produce **valid JSON** that matches this schema exactly.
 * When quoting, keep quotes less than 25 words.
 * If you cannot find any reliable sources, set claim_verdict to Insufficient Evidence and claim_score to a conservative low value (e.g., 20–40) with clear rationale.
 * Always include date_of_check and request missing context if that drastically affects credibility (but still produce a best-effort judgment).
-* Carefully categorize the post into a \`sector\` from these options: Politics, Health, Tech, Agriculture, Entertainment, General.
+* Carefully categorize the post into a \`sector\` from these options: Politics, Health, Tech, Business, Entertainment, Agriculture, Science, General.
 * **CONTENT GUARDRAILS:** If the user's post is a personal lifestyle update (e.g., "It's my birthday", "I ate pizza"), spam, or completely irrelevant chatter that is not a public claim/news, YOU MUST REJECT IT. Set \`verdict_label\` to EXACTLY "REJECTED_PERSONAL", set \`credibilityScore\` to 0, and \`verdict_color\` to "red". Celebrity news (e.g., "Rihanna's house was shot at") IS considered valid public news and should be allowed (usually categorized as Entertainment).
 
 **EXAMPLE:**
@@ -271,7 +273,7 @@ const responseStructure = {
     },
     sector: {
       type: Type.STRING,
-      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Business, Entertainment, Agriculture, Science, or General.",
     },
   },
 };
@@ -301,7 +303,7 @@ For key_claims:
 - confidence must be one of: high, medium, low
 
 Categorize the post into a sector:
-- sector must be one of: Politics, Health, Tech, Agriculture, Entertainment, General.
+- sector must be one of: Politics, Health, Tech, Business, Entertainment, Agriculture, Science, General.
 
 If the user's post is a personal lifestyle update (e.g., "It's my birthday"), spam, or irrelevant chatter, you MUST REJECT IT.
 - Set verdict_label to "REJECTED_PERSONAL" and credibilityScore to 0.
@@ -383,7 +385,7 @@ const evidenceResponseStructure = {
     },
     sector: {
       type: Type.STRING,
-      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Agriculture, Entertainment, or General.",
+      description: "The topic or sector this post belongs to, e.g., Politics, Health, Tech, Business, Entertainment, Agriculture, Science, or General.",
     },
   },
 };
@@ -414,8 +416,110 @@ function inferVerdictLabel(score) {
   return "Not Credible";
 }
 
+function avoidMidpoint(score) {
+  if (score === 50) {
+    return 49;
+  }
+  return score;
+}
+
 function safeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [];
+}
+
+const allowedSectors = [
+  "Politics",
+  "Health",
+  "Tech",
+  "Business",
+  "Entertainment",
+  "Agriculture",
+  "Science",
+  "General",
+];
+
+function normalizeSector(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) {
+    return "General";
+  }
+
+  const mapped = {
+    politics: "Politics",
+    health: "Health",
+    tech: "Tech",
+    technology: "Tech",
+    business: "Business",
+    entertainment: "Entertainment",
+    agriculture: "Agriculture",
+    science: "Science",
+    general: "General",
+  };
+
+  return mapped[raw] || "General";
+}
+
+function sectorToSlug(value) {
+  const sector = normalizeSector(value);
+  return sector.toLowerCase();
+}
+
+function classifySectorFromContent(content, aiSector) {
+  const text = String(content || "").toLowerCase();
+
+  const rules = [
+    {
+      sector: "Health",
+      patterns: [
+        /\b(health|medical|medicine|hospital|doctor|nurse|patient|clinic|treatment|vaccine|vaccination|disease|illness|covid|surgery|sha|social health authority|dha|digital health agency|medication|public health|ministry of health|medical records|continuity of care|health care|healthcare|telemedicine|diagnosis|symptoms|mortality|outbreak|epidemic|pandemic)\b/i,
+      ],
+    },
+    {
+      sector: "Politics",
+      patterns: [
+        /\b(president|government|governance|parliament|mp\b|mca\b|mps\b|mcas\b|election|vote|cabinet|minister|ministry|political|policy|bill|senate|governor|deputy governor|county assembly|state house|statehouse|ruto|bitok|principal secretary|ps\b|docket|education docket|tourism docket|administration|reassignment|reshuffled|appointment|reshuffle|coalition|campaign|manifesto|legislation|devolution|speaker|ward|county government)\b/i,
+      ],
+    },
+    {
+      sector: "Business",
+      patterns: [
+        /\b(business|company|companies|market|markets|economy|economic|invest|investment|trade|revenue|profit|loss|startup|ceo|bank|banks|stock|stocks|budget|fiscal|tax|inflation|interest rate|exchange rate|shilling|shares|profits|merger|acquisition)\b/i,
+      ],
+    },
+    {
+      sector: "Science",
+      patterns: [
+        /\b(science|scientific|research|study|studies|experiment|experiments|researchers|data analysis|laboratory|labs?|physics|chemistry|biology|astronomy|genetics|climate science|space|spectrum|hypothesis|peer review)\b/i,
+      ],
+    },
+    {
+      sector: "Tech",
+      patterns: [
+        /\b(tech|technology|software|app\b|apps\b|digital|ai\b|artificial intelligence|internet|computer|computing|cyber|cybersecurity|website|platform|algorithm|data center|cloud|system|device|hardware|mobile app|algorithmic|automation|machine learning)\b/i,
+      ],
+    },
+    {
+      sector: "Agriculture",
+      patterns: [
+        /\b(agriculture|farmer|farmers|farming|crop|crops|livestock|harvest|irrigation|agricultural|fertilizer|soil|seed|maize|wheat|tea|coffee|dairy|poultry|livelihood|production|extension services)\b/i,
+      ],
+    },
+    {
+      sector: "Entertainment",
+      patterns: [
+        /\b(movie|film|music|artist|celebrity|show|series|theatre|theater|entertainment|concert|actor|actress|song|album|tv|television|album|festival|comedy|drama|gossip|sports entertainment)\b/i,
+      ],
+    },
+  ];
+
+  for (const rule of rules) {
+    if (rule.patterns.some((pattern) => pattern.test(text))) {
+      return rule.sector;
+    }
+  }
+
+  const fallback = normalizeSector(aiSector);
+  return fallback === "General" ? "General" : fallback;
 }
 
 function shouldUseGroundedVerification(content, hasImage) {
@@ -495,7 +599,7 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
           };
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: geminiModel,
         contents,
         config,
       });
@@ -515,7 +619,7 @@ async function generateVerificationResponse(ai, prompt, maxAttempts = 3) {
         `Verification request failed on attempt ${attempt}, retrying:`,
         error
       );
-      await sleep(1000 * attempt);
+      await sleep(Math.min(4000, 1000 * attempt));
     }
   }
 
@@ -532,6 +636,42 @@ function parseStoredVerification(value) {
   } catch (error) {
     console.error("Error parsing verification JSON:", error);
     return null;
+  }
+}
+
+async function analyzeExtensionContent(content) {
+  const ai = getGeminiClient();
+  const prompt = buildVerificationPrompt(content, shouldUseGroundedVerification(content, false));
+  try {
+    const response = await generateVerificationResponse(ai, prompt);
+
+    if (!response.text) {
+      throw new Error("No verification response was returned by the model.");
+    }
+
+    const parsed = normalizeVerificationResult(JSON.parse(response.text), response);
+
+    return {
+      success: true,
+      ...parsed,
+      credibilityScore: avoidMidpoint(parsed.credibilityScore),
+      sector: classifySectorFromContent(content, parsed.sector),
+    };
+  } catch (error) {
+    console.error("Extension analysis fallback activated:", error);
+    return {
+      success: true,
+      credibilityScore: 0,
+      verdict_label: "Verification temporarily unavailable",
+      verdict_color: "gray",
+      explanation:
+        "MILES could not reach the verification model just now. The content was received, but analysis should be retried when the model is available again.",
+      sector: classifySectorFromContent(content, "General"),
+      date_of_check: new Date().toISOString(),
+      summary: "Temporary verification outage",
+      contentExcerpt: String(content || "").slice(0, 280),
+      retryRecommended: true,
+    };
   }
 }
 
@@ -753,7 +893,7 @@ wss.on("connection", async function (ws) {
     const chatbot = getGeminiClient();
     try {
       const completion = await chatbot.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: geminiModel,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { systemInstruction: milesPersona }
       });
@@ -899,13 +1039,19 @@ router.post("/post", upload.single("media"), (req, res) => {
         }
     };
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],
-      config: { responseMimeType: "application/json" }
-    });
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model: geminiModel,
+        contents: [{ role: "user", parts: [{ text: imageEvalPrompt }, imagePart] }],
+        config: { responseMimeType: "application/json" }
+      });
+    } catch (error) {
+      console.warn("Image moderation skipped due to quota/error:", error.message);
+      response = null;
+    }
 
-    const responseText = response.text;
+    const responseText = response?.text;
     if (responseText) {
       let source = path.join(__dirname, "../eval", "images", fileName);
       let destination = path.join(__dirname, "../public", "posts", fileName);
@@ -969,28 +1115,7 @@ router.post("/post", upload.single("media"), (req, res) => {
       throw new Error("No verification response was returned by the model.");
     }
 
-    const result = normalizeVerificationResult(JSON.parse(response.text), response);
-
-    // Detect AI-generated content with a fast secondary call via Gemini
-    try {
-      const textToCheck = typeof prompt === 'string' ? prompt : (Array.isArray(prompt) ? (prompt.find(p => p.text || (typeof p === 'string')) || {}).text || '' : '');
-      if (textToCheck && textToCheck.length > 50) {
-        const aiDetectResponse = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
-          contents: [{ role: "user", parts: [{ text: `Does the following text appear to have been written by an AI or LLM? Respond ONLY with a JSON object: {"is_ai_generated": true/false, "confidence": "high"|"medium"|"low"}\n\nText:\n${textToCheck.substring(0, 1000)}` }] }],
-          config: { responseMimeType: "application/json" }
-        });
-        const aiDetectResult = JSON.parse(aiDetectResponse.text);
-        result.is_ai_generated = aiDetectResult.is_ai_generated === true && aiDetectResult.confidence !== 'low';
-      } else {
-        result.is_ai_generated = false;
-      }
-    } catch (aiDetectErr) {
-      console.warn("AI detection failed (non-critical):", aiDetectErr.message);
-      result.is_ai_generated = false;
-    }
-
-    return result;
+    return normalizeVerificationResult(JSON.parse(response.text), response);
   }
 
   async function main() {
@@ -1062,7 +1187,7 @@ router.post("/post", upload.single("media"), (req, res) => {
                     // If no text provided, generate description from video
                     if (!req.body.content || req.body.content.trim() === "") {
                       const descResponse = await aiDetectClient.models.generateContent({
-                        model: "gemini-2.5-flash",
+                        model: geminiModel,
                         contents: [videoPart, { text: "Watch this video carefully and describe what is happening in detail. Identify any claims, information, news, or notable content present. Be factual and concise." }],
                       });
                       if (descResponse.text) {
@@ -1072,7 +1197,7 @@ router.post("/post", upload.single("media"), (req, res) => {
 
                     // AI-generated video detection
                     const aiDetectResponse = await aiDetectClient.models.generateContent({
-                      model: "gemini-2.5-flash",
+                      model: geminiModel,
                       contents: [videoPart, { text: aiVideoDetectionPrompt }],
                     });
                     if (aiDetectResponse.text) {
@@ -1120,14 +1245,13 @@ router.post("/post", upload.single("media"), (req, res) => {
               }
 
               var aiResponse = await checkCredibility(multimodalPrompt, useGrounding);
-              var credScore = aiResponse.credibilityScore;
+              var credScore = avoidMidpoint(aiResponse.credibilityScore);
               var aiAnalysis = aiResponse.explanation;
               var dateOfCheck = aiResponse.date_of_check;
               var verdictLabel = aiResponse.verdict_label;
               var verdictColor = aiResponse.verdict_color;
-              var sector = req.body.sector || aiResponse.sector || "General";
+              var sector = classifySectorFromContent(textContent, aiResponse.sector);
               var verificationJson = JSON.stringify(aiResponse);
-              var sector = req.body.sector || aiResponse.sector || "General";
               if (verdictLabel === "REJECTED_PERSONAL") {
                 console.log("Blocked personal/spam post from " + author);
                 return res.json({
@@ -1178,32 +1302,55 @@ router.post("/post", upload.single("media"), (req, res) => {
                 aiResponse.is_ai_generated ? 1 : 0,
                 aiVideoFlag
               ];
-              await connection.query(dbQuery, dbArray);
 
-              // Auto-delete safety net
-              await connection.query("DELETE FROM posts WHERE verdict_label = 'REJECTED_PERSONAL'");
+              try {
+                await connection.query(dbQuery, dbArray);
 
-              // Add rep points and posts
-              await connection.query("update users set rep_points = rep_points + 1 where email = ?", [req.session.user.email]);
-              await connection.query("update users set no_of_posts = no_of_posts + 1 where email = ?", [req.session.user.email]);
-              
-              console.log("Finished loading to database");
-              return res.json({ message: "Successfully posted content. Thank you for your contribution.", color: "blue" });
-              await connection.query(
-                "update users set rep_points = rep_points + 1 where email = ?",
-                [req.session.user.email]
-              );
-              await connection.query(
-                "update users set no_of_posts = no_of_posts + 1 where email = ?",
-                [req.session.user.email]
-              );
-              console.log("Finished loading to database");
+                // Add rep points and posts
+                await connection.query(
+                  "update users set rep_points = rep_points + 1 where email = ?",
+                  [req.session.user.email]
+                );
+                await connection.query(
+                  "update users set no_of_posts = no_of_posts + 1 where email = ?",
+                  [req.session.user.email]
+                );
 
-              return res.json({
-                message:
-                  "Successfully posted content. Thank you for your contribution.",
-                color: "blue",
-              });
+                console.log("Finished loading to database");
+                return res.json({
+                  message: "Successfully posted content. Thank you for your contribution.",
+                  color: "blue",
+                });
+              } catch (insertErr) {
+                if (insertErr.code === "ER_DUP_ENTRY") {
+                  await connection.query(
+                    "update posts set image_location = ?, text_content = ?, credibility_score = ?, date_of_check = ?, verdict_label = ?, verdict_color = ?, ai_analysis = ?, sector = ?, claim_count = ?, verification_json = ?, is_ai_generated = ?, ai_video_flag = ? where post_id = ?",
+                    [
+                      imageLocation,
+                      textContent,
+                      credScore,
+                      dateOfCheck,
+                      verdictLabel,
+                      verdictColor,
+                      aiAnalysis,
+                      sector,
+                      claimCount,
+                      verificationJson,
+                      aiResponse.is_ai_generated ? 1 : 0,
+                      aiVideoFlag,
+                      postId,
+                    ]
+                  );
+
+                  console.log("Duplicate post detected, refreshed existing post.");
+                  return res.json({
+                    message: "This post was already analyzed, so the previous post was refreshed with the latest sector and analysis.",
+                    color: "blue",
+                  });
+                }
+
+                throw insertErr;
+              }
             } catch (e) {
               console.error(
                 "Error while loading to database. Error Code: " +
@@ -1266,7 +1413,30 @@ router.get("/", (req, res) => {
       });
     });
 
-    res.render("index", { posts, pageTitle: "Media Literacy Feed", currentSector: null });
+    const sectorStats = {
+      Politics: 0,
+      Health: 0,
+      Tech: 0,
+      Business: 0,
+      Entertainment: 0,
+      Agriculture: 0,
+      Science: 0,
+      General: 0,
+    };
+
+    posts.forEach((post) => {
+      const normalized = normalizeSector(post.sector);
+      if (sectorStats.hasOwnProperty(normalized)) {
+        sectorStats[normalized] += 1;
+      }
+    });
+
+    res.render("index", {
+      posts,
+      pageTitle: "Media Literacy Feed",
+      currentSector: null,
+      sectorStats,
+    });
   }
   if (req.session.user) {
     main();
@@ -1357,8 +1527,7 @@ router.get("/search", (req, res) => {
 // Sector pages
 router.get("/sectors/:sectorName", (req, res) => {
   let sectorName = req.params.sectorName;
-  // Capitalize sector name
-  sectorName = sectorName.charAt(0).toUpperCase() + sectorName.slice(1).toLowerCase();
+  sectorName = normalizeSector(sectorName);
 
   async function main() {
     //Fetch posts from database for this specific sector
@@ -1388,7 +1557,12 @@ router.get("/sectors/:sectorName", (req, res) => {
       });
     });
 
-    res.render("index", { posts, pageTitle: sectorName + " Sector", currentSector: sectorName });
+    res.render("index", {
+      posts,
+      pageTitle: sectorName + " Sector",
+      currentSector: sectorName.toLowerCase(),
+      sectorStats: null,
+    });
   }
 
   if (req.session.user) {
@@ -1510,6 +1684,34 @@ Comment: "${comment}"`;
       verdict_label: "Verification Failed", 
       verdict_color: "red", 
       explanation: "Could not verify this comment at the moment due to an AI error or rate limit."
+    });
+  }
+});
+
+router.post("/api/extension/analyze", async (req, res) => {
+  const content = String(req.body?.content || "").trim();
+  if (!content) {
+    return res.status(400).json({
+      success: false,
+      message: "No content was provided for analysis.",
+    });
+  }
+
+  try {
+    const result = await analyzeExtensionContent(content);
+    res.json({
+      success: true,
+      sourceUrl: String(req.body?.sourceUrl || ""),
+      pageTitle: String(req.body?.pageTitle || ""),
+      contentExcerpt: content.slice(0, 280),
+      ...result,
+    });
+  } catch (error) {
+    console.error("Extension analysis error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Extension verification failed.",
+      error: String(error?.message || error),
     });
   }
 });

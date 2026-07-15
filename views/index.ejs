@@ -125,7 +125,8 @@
                     <a href="/sectors/business" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Business</a>
                     <a href="/sectors/science" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Science</a>
                     <a href="/sectors/entertainment" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Entertainment</a>
-                    <a href="/sectors/agriculture" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors">Agriculture</a>
+                    <a href="/sectors/agriculture" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors border-b border-border/50">Agriculture</a>
+                    <a href="/sectors/general" class="block px-4 py-3 text-sm hover:bg-muted text-foreground transition-colors">General</a>
                   </div>
                 </div><a
                   class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -289,12 +290,64 @@
               <a href="/sectors/business" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Business</a>
               <a href="/sectors/science" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Science</a>
               <a href="/sectors/entertainment" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Entertainment</a>
-              <a href="/sectors/agriculture" class="flex items-center col-span-2 space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Agriculture</a>
+              <a href="/sectors/agriculture" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">Agriculture</a>
+              <a href="/sectors/general" class="flex items-center space-x-2 p-3 rounded-lg hover:bg-muted text-sm border border-border/50 justify-center">General</a>
             </div>
           </div>
         </nav>
         <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div class="space-y-6">
+            <div class="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
+              <div class="p-6 sm:p-8 bg-gradient-to-br from-primary/10 via-background to-background">
+                <div class="space-y-3 max-w-2xl">
+                  <p class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                    <span class="h-2 w-2 rounded-full bg-primary"></span>
+                    Evidence-first media literacy
+                  </p>
+                  <h1 class="text-3xl sm:text-4xl font-bold tracking-tight"><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Media Literacy Feed' %></h1>
+                  <p class="text-muted-foreground max-w-xl">
+                    Browse verified claims by sector, compare credibility signals, and open the full analysis when you need the source details.
+                  </p>
+                </div>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-6">
+                  <div class="rounded-xl border border-border/60 bg-background/80 p-4">
+                    <p class="text-xs text-muted-foreground">Open posts</p>
+                    <p class="text-2xl font-bold"><%= typeof posts !== 'undefined' ? posts.length : 0 %></p>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/80 p-4">
+                    <p class="text-xs text-muted-foreground">Categories</p>
+                    <p class="text-2xl font-bold">8</p>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/80 p-4">
+                    <p class="text-xs text-muted-foreground">Fastest path</p>
+                    <p class="text-sm font-semibold">Use sectors to filter</p>
+                  </div>
+                  <div class="rounded-xl border border-border/60 bg-background/80 p-4">
+                    <p class="text-xs text-muted-foreground">Best action</p>
+                    <a href="/post" class="text-sm font-semibold text-primary hover:underline">Post for analysis</a>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-5">
+                  <% const sectorLinks = ['Politics', 'Health', 'Tech', 'Business', 'Entertainment', 'Agriculture', 'Science', 'General']; %>
+                  <% sectorLinks.forEach(function(sector){ %>
+                    <a href="/sectors/<%= sector.toLowerCase() %>" class="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/30 px-3 py-1.5 text-sm hover:bg-primary/10 hover:border-primary/30 transition-colors">
+                      <span><%= sector %></span>
+                      <% if (typeof sectorStats !== 'undefined' && sectorStats && sectorStats[sector] !== undefined) { %>
+                        <span class="text-xs text-muted-foreground">(<%= sectorStats[sector] %>)</span>
+                      <% } %>
+                    </a>
+                  <% }); %>
+                </div>
+                <div class="mt-6 flex flex-wrap gap-3">
+                  <button id="open-analysis-space" type="button" class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                    Open analysis space
+                  </button>
+                  <a href="/post" class="inline-flex items-center justify-center rounded-md border border-border/60 bg-background px-4 py-2 text-sm font-medium hover:bg-muted transition-colors">
+                    Go to post page
+                  </a>
+                </div>
+              </div>
+            </div>
             <div class="text-center space-y-2">
               <h1 class="text-2xl font-bold"><%= typeof pageTitle !== 'undefined' ? pageTitle : 'Media Literacy Feed' %></h1>
               <p class="text-muted-foreground">
@@ -311,7 +364,8 @@
 
             <!-- Inline Posting Form -->
             <div
-              class="inline-posting-form-container rounded-lg border bg-card text-card-foreground shadow-sm border-border/50 mb-8"
+              id="analysis-space"
+              class="inline-posting-form-container rounded-lg border bg-card text-card-foreground shadow-sm border-border/50 mb-8 hidden"
             >
               <div class="p-6">
                 <form class="space-y-4">
@@ -418,9 +472,10 @@
                       <%=post.text_content%>
                     </p>
                     <% if(post.sector) { %>
-                      <div class="mt-2 text-xs text-muted-foreground bg-muted/30 px-2 py-1 rounded inline-block">
-                        Sector: <strong><%= post.sector %></strong>
-                      </div>
+                      <a href="/sectors/<%= String(post.sector).toLowerCase() %>" class="mt-2 inline-flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded-full border border-primary/20 hover:bg-primary/15 transition-colors">
+                        <span>Sector:</span>
+                        <strong><%= post.sector %></strong>
+                      </a>
                     <% } %>
                     <% if(post.claim_count && post.claim_count > 1) { %>
                       <div class="mt-2 ml-1 text-xs px-2 py-1 rounded inline-block font-semibold" style="background:#fff3cd; color:#856404; border:1px solid #ffc107;">
@@ -684,8 +739,28 @@
       });
 
       window.onload = function () {
+        var composeMode = new URLSearchParams(window.location.search).get('compose');
+        var analysisSpace = document.getElementById('analysis-space');
+        var contentBox = document.getElementById('content');
+        if (composeMode === '1' && analysisSpace) {
+          analysisSpace.classList.remove('hidden');
+          if (contentBox) {
+            setTimeout(function () {
+              analysisSpace.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              contentBox.focus();
+            }, 50);
+          }
+        }
         // ── Details expand/collapse ───────────────────────────
         var analysisBoxes = Array.from(document.getElementsByClassName('ai-analysis'));
+        var openAnalysisSpace = document.getElementById('open-analysis-space');
+        var analysisSpace = document.getElementById('analysis-space');
+        if (openAnalysisSpace && analysisSpace) {
+          openAnalysisSpace.addEventListener('click', function () {
+            analysisSpace.classList.remove('hidden');
+            analysisSpace.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }
         Array.from(document.getElementsByClassName('details')).forEach(function(btn, i) {
           btn.addEventListener('click', function(e) {
             e.stopPropagation();
@@ -838,9 +913,10 @@
         // ── "Post" link smooth-scrolls to form ───────────────
         document.querySelectorAll('a[href="/post"]').forEach(function(link) {
           link.addEventListener('click', function(e) {
-            var form = document.querySelector('.inline-posting-form-container');
+            var form = document.getElementById('analysis-space') || document.querySelector('.inline-posting-form-container');
             if (form) {
               e.preventDefault();
+              form.classList.remove('hidden');
               form.scrollIntoView({behavior:'smooth', block:'center'});
               if (textarea) textarea.focus();
             }
