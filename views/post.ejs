@@ -119,24 +119,6 @@
                     <path d="M12 8v8"></path></svg
                   ><span class="hidden lg:inline">Post</span></a
                 ><a
-                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 font-medium"
-                  href="/profile"
-                  ><svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="lucide lucide-user w-5 h-5"
-                  >
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle></svg
-                  ><span class="hidden lg:inline">Profile</span></a
-                ><a
                   class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted"
                   href="/chatbot"
                   ><svg
@@ -207,6 +189,24 @@
                       d="M21 14.98514 3 14.98514"
                     ></path></svg
                   ><span class="hidden lg:inline">My Posts</span></a
+                ><a
+                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 font-medium"
+                  href="/profile"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-user w-5 h-5"
+                  >
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle></svg
+                  ><span class="hidden lg:inline">Profile</span></a
                 >
               </div>
               <div class="flex items-center space-x-3">
@@ -260,24 +260,6 @@
                   <path d="M8 12h8"></path>
                   <path d="M12 8v8"></path></svg
                 ><span class="text-xs">Post</span></a
-              ><a
-                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg"
-                href="/profile"
-                ><svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="lucide lucide-user w-5 h-5"
-                >
-                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle></svg
-                ><span class="text-xs">Profile</span></a
               ><a
                 class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-muted-foreground"
                 href="/chatbot"
@@ -351,6 +333,24 @@
                     d="M21 14.98514 3 14.98514"
                   ></path></svg
                 ><span class="text-xs">My Posts</span></a
+              ><a
+                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg"
+                href="/profile"
+                ><svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="lucide lucide-user w-5 h-5"
+                >
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle></svg
+                ><span class="text-xs">Profile</span></a
               >
             </div>
           </div>
@@ -360,7 +360,7 @@
             <div class="text-center space-y-2">
               <h1 class="text-2xl font-bold">Share Content for Analysis</h1>
               <p class="text-muted-foreground">
-                Post text or images to get AI-powered credibility analysis
+                Post text or images to get AI-powered, evidence-based verification
               </p>
               <p class="text-muted-foreground">
                 Please see our
@@ -414,10 +414,10 @@
                     </p>
                   </div>
                   <div class="space-y-4">
-                    <label
+                    <label>
                       class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >Add Image (Optional)</label
-                    >
+                      >Add Image or Video (Optional)</label>
+                     <video id="video-preview" controls style="display:none; max-width:100%; margin-top:10px; border-radius:8px;"></video>
                     <p
                       id="user-message"
                       class="text-l text-muted-foreground"
@@ -434,7 +434,7 @@
                       <input
                         type="file"
                         class="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm hidden"
-                        accept="image/*"
+                        ="image/*,video/*"
                         id="image-upload"
                       /><label
                         id="image-label"
@@ -464,11 +464,11 @@
                         </div>
                         <div class="space-y-1">
                           <p class="text-sm font-medium">
-                            Click to upload image
-                          </p>
-                          <p class="text-xs text-muted-foreground">
-                            PNG, JPG up to 10MB
-                          </p>
+                            Click to upload image or video
+                         </p>
+                         <p class="text-xs text-muted-foreground">
+                           PNG, JPG up to 10MB · MP4, MOV up to 50MB
+                         </p>
                         </div></label
                       >
                     </div>
@@ -523,8 +523,7 @@
                     <span class="text-primary text-xs font-bold">1</span>
                   </div>
                   <p class="text-sm">
-                    Your content is analyzed by our AI system for credibility
-                    indicators
+                    Your content is analyzed for claims, evidence, and source-backed credibility indicators
                   </p>
                 </div>
                 <div class="flex items-start space-x-3">
@@ -545,8 +544,7 @@
                     <span class="text-primary text-xs font-bold">3</span>
                   </div>
                   <p class="text-sm">
-                    Credibility scores help others make informed decisions about
-                    the information
+                    Credibility scores, claim checks, and source links help others make informed decisions about the information
                   </p>
                 </div>
               </div>
@@ -661,6 +659,14 @@
     </div>
     <script>
       window.onload = function () {
+        // Sector check
+        const urlParams = new URLSearchParams(window.location.search);
+        const sectorParam = urlParams.get('sector');
+        if (sectorParam) {
+           const titleElement = document.querySelector('h1.text-2xl.font-bold');
+           if (titleElement) titleElement.innerText = "Share to " + sectorParam + " Sector";
+        }
+
         //Max content for text area
         var textarea = document.getElementsByTagName("textarea")[0];
         var charCounter = document.getElementById("character-counter");
@@ -680,80 +686,136 @@
         var imageLabel = document.getElementById("image-label");
         userMessage.style.color = "red";
         var imageFile = null;
-        imageUpload.addEventListener("change", function (e) {
+          imageUpload.addEventListener("change", function (e) {
           let files = e.target.files;
           let file = files[0];
           imageFile = file;
-          let size = file.size;
-          if (size > 10000000) {
-            userMessage.innerText = "File must be 10MBs max";
-          } else {
-            const reader = new FileReader();
-            imageLabel.style.opacity = 0.4;
-            userMessage.innerText = "Click the image to change it";
-            userMessage.style.color = "blue";
-            reader.readAsDataURL(file);
-            reader.onload = function (event) {
-              let holder = document.getElementById("holder");
-              holder.style.background = `url(${event.target.result})`;
-            };
-          }
-        });
+          let isVideo = file.type.startsWith("video/");
+          let maxSize = isVideo ? 50000000 : 10000000;
+          let label = isVideo ? "video" : "image";
+    let maxLabel = isVideo ? "50MBs" : "10MBs";
+
+    if (file.size > maxSize) {
+      userMessage.innerText = `File must be ${maxLabel} max`;
+    } else {
+      imageLabel.style.opacity = 0.4;
+      userMessage.innerText = `Click the ${label} to change it`;
+      userMessage.style.color = "blue";
+
+      let holder = document.getElementById("holder");
+      let videoPreview = document.getElementById("video-preview");
+
+      if (isVideo) {
+        holder.style.background = "";
+        videoPreview.style.display = "block";
+        videoPreview.src = URL.createObjectURL(file);
+      } else {
+        videoPreview.style.display = "none";
+        videoPreview.src = "";
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = function (event) {
+          holder.style.background = `url(${event.target.result})`;
+        };
+      }
+    }
+  });
 
         // Post content, send to backend
         var postBtn = document.getElementById("post-btn");
+        var postForm = postBtn ? postBtn.closest("form") : null;
         var errorMessage = document.getElementById("error-message");
-        postBtn.addEventListener("click", function (e) {
+        function setProcessingState(isProcessing) {
+          if (!postBtn) return;
+          postBtn.disabled = isProcessing;
+          postBtn.style.opacity = isProcessing ? "0.7" : "1";
+          postBtn.innerText = isProcessing ? "Analyzing..." : "Post for Analysis";
+        }
+        function showModalMessage(message) {
+          var modalHolder = document.getElementsByClassName("modal-overlay")[0];
+          var modal = document.getElementById("waiting");
+          if (modalHolder && modal) {
+            modal.textContent = message;
+            modalHolder.style.display = "flex";
+          }
+        }
+        function hideModal() {
+          var modalHolder = document.getElementsByClassName("modal-overlay")[0];
+          if (modalHolder) {
+            modalHolder.style.display = "none";
+          }
+        }
+        if (!postForm) {
+          console.error("Post form was not found.");
+        }
+        (postForm || postBtn).addEventListener("click", function (e) {
           e.preventDefault();
-          if (textarea.value.trim() == "") {
-            errorMessage.innerText = "Please provide some text for context.";
+          if (textarea.value.trim() == "" && !imageFile) {
+            errorMessage.innerText = "Please provide text or upload an image/video.";
             setTimeout(function () {
               errorMessage.innerText = "";
-            }, 5000);
+            }, 3003);
             return;
           } else {
+            setProcessingState(true);
             let uploadData = new FormData();
-            uploadData.append("image", imageFile);
+            uploadData.append("media", imageFile);
             uploadData.append("content", textarea.value);
+            if (sectorParam) {
+              uploadData.append("sector", sectorParam);
+            }
 
-            //Set the modal
-            let modalHolder =
-              document.getElementsByClassName("modal-overlay")[0];
-            let modal = document.getElementById("waiting");
-            modalHolder.style.display = "flex";
             let messageArr = [
-              "Please wait while we process the content.",
-              "AI analyzing content.",
+              "Checking the post for credibility signals.",
+              "Looking for evidence when the content needs deeper verification.",
             ];
             let messageCounter = 0;
-            setInterval(function () {
-              modal.textContent = messageArr[messageCounter];
+            let loadingInterval = setInterval(function () {
+              showModalMessage(messageArr[messageCounter]);
               messageCounter++;
 
               if (messageCounter > 1) {
                 messageCounter = 0;
               }
-            }, 3000);
+            }, 3003);
+            showModalMessage(messageArr[0]);
 
             fetch("/post", {
               method: "POST",
               body: uploadData,
             })
-              .then((Response) => Response.json())
+              .then(async (Response) => {
+                const payloadText = await Response.text();
+                try {
+                  return JSON.parse(payloadText);
+                } catch (_) {
+                  throw new Error(payloadText || "Server returned an invalid response.");
+                }
+              })
               .then((data) => {
+                clearInterval(loadingInterval);
                 if (data.color == "red") {
                   userMessage.textContent = data.message;
                   userMessage.style.color = "red";
-                  modalHolder.style.display = "none";
+                  hideModal();
                 } else if (data.color == "orange") {
-                  modalHolder.style.display = "none";
+                  hideModal();
                   userMessage.textContent = data.message;
                   userMessage.style.color = "red";
                 } else {
-                  modalHolder.style.display = "flex";
-                  modal.textContent = "Successfully uploaded content.";
+                  showModalMessage("Successfully uploaded content.");
                   window.location.href = "/";
                 }
+                setProcessingState(false);
+              })
+              .catch((error) => {
+                clearInterval(loadingInterval);
+                hideModal();
+                console.error("Post request failed:", error);
+                userMessage.textContent =
+                  "Verification failed. Please try again.";
+                userMessage.style.color = "red";
+                setProcessingState(false);
               });
           }
         });

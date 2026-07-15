@@ -114,24 +114,6 @@
                     <path d="M12 8v8"></path></svg
                   ><span class="hidden lg:inline">Post</span></a
                 ><a
-                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 bg-primary/10 text-primary font-medium"
-                  href="/profile"
-                  ><svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="lucide lucide-user w-5 h-5"
-                  >
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle></svg
-                  ><span class="hidden lg:inline">Profile</span></a
-                ><a
                   class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 text-muted-foreground hover:text-foreground hover:bg-muted"
                   href="/chatbot"
                   ><svg
@@ -202,15 +184,48 @@
                       d="M21 14.98514 3 14.98514"
                     ></path></svg
                   ><span class="hidden lg:inline">My Posts</span></a
+                ><a
+                  class="flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 bg-primary/10 text-primary font-medium"
+                  href="/profile"
+                  ><svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="lucide lucide-user w-5 h-5"
+                  >
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle></svg
+                  ><span class="hidden lg:inline">Profile</span></a
                 >
               </div>
               <div class="flex items-center space-x-3">
-                <span
-                  class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8"
-                  ><img
-                    class="aspect-square h-full w-full"
-                    src="images/smiley.webp"
-                /></span>
+                <div class="relative" id="nav-avatar-wrap">
+                  <button id="nav-avatar-btn" onclick="(function(){document.getElementById('nav-avatar-dropdown').classList.toggle('hidden');event.stopPropagation();})()" style="background:none;border:none;padding:0;cursor:pointer;">
+                    <span class="relative flex shrink-0 overflow-hidden rounded-full w-8 h-8 border-2 border-primary/40 hover:border-primary transition-all duration-200" style="display:block;">
+                      <img id="nav-avatar-img" class="aspect-square h-full w-full object-cover" src="<%= userInfo.profile_picture ? '/' + userInfo.profile_picture : '/images/smiley.webp' %>" alt="Profile" />
+                    </span>
+                  </button>
+                  <div id="nav-avatar-dropdown" class="hidden absolute right-0 top-full mt-2 w-44 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden" style="min-width:170px;">
+                    <div class="px-4 py-3 border-b border-border/50">
+                      <p class="text-xs text-muted-foreground">Signed in as</p>
+                      <p id="nav-user-email" class="text-xs font-semibold truncate text-foreground"></p>
+                    </div>
+                    <a href="/profile" class="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      View Profile
+                    </a>
+                    <button onclick="milesLogout()" class="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors border-t border-border/50">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                      Log Out
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -255,24 +270,6 @@
                   <path d="M8 12h8"></path>
                   <path d="M12 8v8"></path></svg
                 ><span class="text-xs">Post</span></a
-              ><a
-                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-primary"
-                href="/profile"
-                ><svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="24"
-                  height="24"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="lucide lucide-user w-5 h-5"
-                >
-                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle></svg
-                ><span class="text-xs">Profile</span></a
               ><a
                 class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-muted-foreground"
                 href="/chatbot"
@@ -346,6 +343,24 @@
                     d="M21 14.98514 3 14.98514"
                   ></path></svg
                 ><span class="text-xs">My Posts</span></a
+              ><a
+                class="flex flex-col items-center space-y-1 px-3 py-2 rounded-lg text-primary"
+                href="/profile"
+                ><svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="lucide lucide-user w-5 h-5"
+                >
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle></svg
+                ><span class="text-xs">Profile</span></a
               >
             </div>
           </div>
@@ -366,45 +381,45 @@
                       justify-content: space-between;
                     "
                   >
-                    <span
-                      class="relative flex shrink-0 overflow-hidden rounded-full w-24 h-24 border-4 border-primary/20"
-                      ><img
-                        class="aspect-square h-full w-full"
-                        src="images/smiley.webp"
-                    /></span>
+                    <!-- Profile Picture with upload overlay -->
+                    <div class="relative" style="width:96px;height:96px;flex-shrink:0;">
+                      <span class="relative flex shrink-0 overflow-hidden rounded-full w-24 h-24 border-4 border-primary/20" style="display:block;">
+                        <img id="profile-pic-large" class="aspect-square h-full w-full object-cover" src="<%= userInfo.profile_picture ? '/' + userInfo.profile_picture : '/images/smiley.webp' %>" alt="Profile Picture" />
+                      </span>
+                      <label for="profile-pic-input" title="Change profile picture" style="position:absolute;bottom:0;right:0;background:rgba(124,58,237,0.85);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;border:2px solid white;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      </label>
+                      <input type="file" id="profile-pic-input" accept="image/*" style="display:none;" />
+                      <div id="pic-upload-status" style="display:none;position:absolute;top:-28px;left:50%;transform:translateX(-50%);background:#7c3aed;color:white;font-size:11px;padding:2px 8px;border-radius:999px;white-space:nowrap;">Uploading...</div>
+                    </div>
                     <span>
                       <button
                         title="Log Out"
-                        class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
+                        class="inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
                         id="logout"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                          class="lucide lucide-log-out w-4 h-4"
-                        >
-                          <path
-                            d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
-                          ></path>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out w-4 h-4">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                           <polyline points="16 17 21 12 16 7"></polyline>
                           <line x1="21" x2="9" y1="12" y2="12"></line>
                         </svg>
+                        Log Out
                       </button>
                     </span>
                   </div>
                   <div class="flex-1 space-y-3">
-                    <div>
-                      <h1 class="text-2xl font-bold">
+                    <div class="flex items-center space-x-2">
+                      <h1 class="text-2xl font-bold" id="profile-username-display">
                         <%= userInfo.username%>
                       </h1>
-                      <!-- <p class="text-muted-foreground">@johndoe </p> -->
+                      <button id="edit-username-btn" class="text-muted-foreground hover:text-primary transition-colors" title="Edit Username">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+                      </button>
+                      <div id="edit-username-form" class="hidden flex items-center space-x-2">
+                        <input type="text" id="edit-username-input" class="h-8 rounded-md border border-input bg-background px-2 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" value="<%= userInfo.username%>" />
+                        <button id="save-username-btn" class="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
+                        <button id="cancel-username-btn" class="h-8 rounded-md bg-muted px-3 text-xs font-medium text-foreground hover:bg-muted/80">Cancel</button>
+                      </div>
                     </div>
                     <div
                       class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground"
@@ -732,34 +747,149 @@
       </div>
     </div>
     <script>
-      // Set email
+      // Set email from session
       var emailHolder = document.getElementById("user-email");
-      emailHolder.textContent = sessionStorage.getItem("user");
+      var sessionEmail = sessionStorage.getItem("user") || '';
+      emailHolder.textContent = sessionEmail;
 
-      //Set credibility review
+      var navEmailEl = document.getElementById('nav-user-email');
+      var sessionUsername = sessionStorage.getItem('username');
+      if (navEmailEl) navEmailEl.textContent = sessionUsername ? '@' + sessionUsername : sessionEmail;
+
+      // Store profile picture in sessionStorage so other pages can use it
+      <% if (userInfo.profile_picture) { %>
+        sessionStorage.setItem('profile_picture', '<%= userInfo.profile_picture %>');
+      <% } %>
+
+      // Set credibility review
       var credReview = document.getElementById("cred-review");
-      var credScore = parseInt(document.getElementById("cred-score").value);
+      var credScore = parseInt(document.getElementById("cred-score").textContent);
       if (credScore >= 70) {
         credReview.textContent = "Highly Credible user";
       } else if (credScore >= 60) {
         credReview.textContent = "Credible user";
       }
 
-      //Logging out
-      var logout = document.getElementById("logout");
-      logout.addEventListener("click", function () {
-        let sure = confirm("Are you sure you want to log out?");
+      // Logout
+      function milesLogout() {
+        var sure = confirm("Are you sure you want to log out?");
         if (sure) {
           sessionStorage.clear();
-          fetch("/profile", {
-            method: "POST",
-          }).then((Request) => {
-            if (Request.statusText == "OK") {
-              window.location.href = "/signin";
-            }
+          fetch("/profile", { method: "POST" }).then(function() {
+            window.location.href = "/signin";
           });
         }
+      }
+      var logout = document.getElementById("logout");
+      logout.addEventListener("click", milesLogout);
+
+      // Avatar dropdown close on outside click
+      document.addEventListener('click', function(e) {
+        var dd  = document.getElementById('nav-avatar-dropdown');
+        var btn = document.getElementById('nav-avatar-btn');
+        if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
+          dd.classList.add('hidden');
+        }
       });
+
+      // Profile picture upload
+      var picInput = document.getElementById('profile-pic-input');
+      if (picInput) {
+        picInput.addEventListener('change', function(e) {
+          var file = e.target.files[0];
+          if (!file) return;
+          if (file.size > 5 * 1024 * 1024) {
+            alert('Image must be under 5MB');
+            return;
+          }
+          var statusEl = document.getElementById('pic-upload-status');
+          statusEl.style.display = 'block';
+          statusEl.textContent = 'Uploading...';
+
+          var formData = new FormData();
+          formData.append('profile_picture', file);
+
+          fetch('/profile/picture', { method: 'POST', body: formData })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data.path) {
+                // Update both profile pics on the page
+                document.getElementById('profile-pic-large').src = '/' + data.path;
+                var navImg = document.getElementById('nav-avatar-img');
+                if (navImg) navImg.src = '/' + data.path;
+                sessionStorage.setItem('profile_picture', data.path);
+                statusEl.textContent = 'Updated!';
+                setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+              } else {
+                statusEl.textContent = 'Failed';
+                setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+              }
+            })
+            .catch(function() {
+              statusEl.textContent = 'Error';
+              setTimeout(function() { statusEl.style.display = 'none'; }, 2000);
+            });
+        });
+      }
+
+      // Username Edit Logic
+      const editBtn = document.getElementById('edit-username-btn');
+      const saveBtn = document.getElementById('save-username-btn');
+      const cancelBtn = document.getElementById('cancel-username-btn');
+      const editForm = document.getElementById('edit-username-form');
+      const usernameDisplay = document.getElementById('profile-username-display');
+      const usernameInput = document.getElementById('edit-username-input');
+
+      if (editBtn) {
+        editBtn.addEventListener('click', () => {
+          usernameDisplay.classList.add('hidden');
+          editBtn.classList.add('hidden');
+          editForm.classList.remove('hidden');
+        });
+
+        cancelBtn.addEventListener('click', () => {
+          usernameDisplay.classList.remove('hidden');
+          editBtn.classList.remove('hidden');
+          editForm.classList.add('hidden');
+          usernameInput.value = usernameDisplay.textContent.trim();
+        });
+
+        saveBtn.addEventListener('click', () => {
+          const newUsername = usernameInput.value.trim();
+          if (newUsername.length < 3) {
+            alert("Username must be at least 3 characters.");
+            return;
+          }
+          saveBtn.textContent = 'Saving...';
+          saveBtn.disabled = true;
+
+          fetch('/update-username', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: newUsername })
+          }).then(res => res.json()).then(data => {
+            saveBtn.textContent = 'Save';
+            saveBtn.disabled = false;
+            
+            if (data.message === "Username updated successfully!") {
+              usernameDisplay.textContent = newUsername;
+              sessionStorage.setItem("username", newUsername);
+              // Also update the UI top right dropdown
+              const navAvatarUsername = document.getElementById('nav-user-email');
+              if (navAvatarUsername) {
+                  navAvatarUsername.textContent = '@' + newUsername; // Update avatar too
+              }
+              cancelBtn.click(); // Hide form
+            } else {
+              alert(data.message || "Failed to update username");
+            }
+          }).catch(err => {
+            saveBtn.textContent = 'Save';
+            saveBtn.disabled = false;
+            alert("Network error.");
+          });
+        });
+      }
     </script>
   </body>
 </html>

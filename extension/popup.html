@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MILES Verify</title>
+    <style>
+      body {
+        margin: 0;
+        width: 360px;
+        font-family: Arial, sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .wrap {
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+      p {
+        margin: 0 0 12px;
+        color: #475569;
+        font-size: 13px;
+      }
+      label {
+        display: block;
+        margin: 10px 0 6px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      input, textarea, button {
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        padding: 10px 12px;
+        font: inherit;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .row button {
+        flex: 1;
+      }
+      .primary {
+        background: #2563eb;
+        color: white;
+        border-color: #2563eb;
+      }
+      .secondary {
+        background: white;
+      }
+      .card {
+        margin-top: 12px;
+        padding: 12px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        max-height: 42vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .icon-btn {
+        border: 0;
+        background: transparent;
+        color: #475569;
+        cursor: pointer;
+        line-height: 1;
+        padding: 2px 4px;
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .hidden {
+        display: none;
+      }
+      #result-body {
+        overflow-y: auto;
+        max-height: calc(42vh - 48px);
+        padding-right: 4px;
+        min-height: 0;
+      }
+      .chip {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .score {
+        font-size: 28px;
+        font-weight: 800;
+        margin: 4px 0;
+      }
+      .status {
+        font-size: 12px;
+        color: #64748b;
+      }
+      .error {
+        color: #b91c1c;
+        margin-top: 8px;
+        font-size: 12px;
+      }
+      .tiny {
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>MILES Verify</h1>
+      <p>Analyze selected text from social media or paste content manually.</p>
+
+      <label for="server-url">Server URL</label>
+      <input id="server-url" type="text" value="http://localhost:3003" />
+
+      <label for="content">Content</label>
+      <textarea id="content" placeholder="Paste a post, caption, comment, or selected text here."></textarea>
+
+      <div class="row">
+        <button id="use-selection" class="secondary" type="button">Use selection</button>
+        <button id="analyze" class="primary" type="button">Analyze</button>
+      </div>
+
+      <div class="row">
+        <button id="open-dashboard" class="secondary" type="button">Open MILES</button>
+      </div>
+
+      <div id="error" class="error hidden"></div>
+
+      <div id="result" class="card hidden">
+        <div class="card-header">
+          <div class="chip" id="sector">Sector</div>
+          <button class="icon-btn" id="toggle-result" type="button" aria-label="Collapse or expand result">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m6 9 6 6 6-6"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="result-body">
+          <div id="score" class="score">--</div>
+          <div id="verdict" style="font-weight: 700;"></div>
+          <div id="summary" class="status"></div>
+          <div id="explanation" class="tiny" style="margin-top: 8px;"></div>
+        </div>
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -83,7 +83,7 @@ It combines **AI-powered fact-checking**, **community reviews**, and **gamificat
    nodemon index
    ```
 
-4. Open [http://localhost:5000/signin] in your browser.
+4. Open [http://localhost:3003/signin] in your browser.
 
 ---
 
